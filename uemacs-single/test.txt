@@ -1,0 +1,50 @@
+Welcome to the Single-File uEmacs!
+===================================
+
+This version of uEmacs/PK 4.0 has been amalgamated into a single C file.
+
+Original: ~50 source files
+Single:   1 file (uemacs.c, ~18000 lines)
+
+Binary size: 187KB (optimized, no debug symbols)
+Startup time: ~1 millisecond
+
+QUICK REFERENCE
+---------------
+
+Navigation:
+  Ctrl+F/B    - Forward/backward character
+  Ctrl+N/P    - Next/previous line
+  Ctrl+A/E    - Beginning/end of line
+  Ctrl+V/Z    - Page down/up
+  Meta+</Meta+> - Beginning/end of file
+
+Editing:
+  Ctrl+D      - Delete character
+  Ctrl+K      - Kill line
+  Ctrl+Y      - Yank (paste)
+  Ctrl+W      - Kill region
+  Meta+W      - Copy region
+
+Files:
+  Ctrl+X Ctrl+F - Find file
+  Ctrl+X Ctrl+D - Save file
+  Ctrl+X Ctrl+C - Exit
+
+Windows:
+  Ctrl+X 2    - Split window
+  Ctrl+X 1    - One window
+  Ctrl+X O    - Other window
+
+Search:
+  Meta+S      - Search forward
+  Ctrl+R      - Search backward
+  Meta+R      - Replace
+
+Help:
+  Meta+?      - Show help
+  Ctrl+G      - Abort command
+
+Note: Meta = Esc key (press and release, then press the next key)
+
+Try editing this file and saving it!
