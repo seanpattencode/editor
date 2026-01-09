@@ -1038,7 +1038,7 @@ loop:
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp; curwp->w_doto=x<llength(lp)?x:llength(lp);
-					if(ch=='M'){if(b>=128&&!(b&32)){backdir();}else if(!(b&3)){if(dirmode){char f[256];int i,n=llength(lp);
+					if(ch=='M'){if(b>=128&&!(b&32)){backdir();}else if(!(b&3)&&!(b&32)){if(dirmode){char f[256];int i,n=llength(lp);
 						for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;
 						if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}}
 					else{curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}}}
