@@ -3936,7 +3936,7 @@ newline(f, n, k)
 {
 	register LINE	*lp;
 	register int	s;
-
+	if(dirmode){lp=curwp->w_dotp;char f[256];int i,n=llength(lp);for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}return TRUE;}
 	if (n < 0)
 		return (FALSE);
 	while (n--) {
