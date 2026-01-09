@@ -94,6 +94,8 @@
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<string.h>
+#include	<dirent.h>
+int dirmode;
 
 #define	CVMVAS	1			/* C-V, M-V work in pages.	*/
 #define	BACKUP	0			/* Make backup file.		*/
@@ -1036,7 +1038,10 @@ loop:
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp; curwp->w_doto=x<llength(lp)?x:llength(lp);
-					if(ch=='M'&&!(b&3)){curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}
+					if(ch=='M'&&!(b&3)){if(dirmode){char f[256];int i,n=llength(lp);
+						for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;
+						if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}}
+					else{curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}}
 					curwp->w_flag|=WFMOVE; update();
 				}
 				goto loop;
@@ -3513,6 +3518,14 @@ out:
 		return (FALSE);
 	return (TRUE);
 }
+
+filldir(p)char*p;{DIR*d;struct dirent*e;LINE*l;int n;char s[256];
+if(!(d=opendir(p)))return;bclear(curbp);chdir(p);getcwd(curbp->b_fname,NFILEN);
+while((e=readdir(d))){if(e->d_name[0]=='.'&&!e->d_name[1])continue;
+n=sprintf(s,"%s%s",e->d_name,e->d_type==DT_DIR?"/":"");if((l=lalloc(n))){
+l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
+curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}closedir(d);dirmode=1;
+curwp->w_linep=curwp->w_dotp=lforw(curbp->b_linep);curwp->w_doto=0;curwp->w_flag|=WFHARD;}
 
 /*
  * Take a file name, and from it
@@ -7003,10 +7016,7 @@ char	*argv[];
 	vtinit();				/* Virtual terminal.	*/
 	edinit(bname);				/* Buffers, windows.	*/
 	keymapinit();				/* Symbols, bindings.	*/
-	if (argc > 1) {
-		update();
-		readin(argv[1]);
-	}
+	if (argc > 1) { update(); readin(argv[1]); } else filldir(".");
 	lastflag = 0;				/* Fake last flags.	*/
 loop:
 	update();				/* Fix up the screen.	*/
