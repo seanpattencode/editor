@@ -2328,6 +2328,7 @@ extern	int	extend();		/* Extended commands.		*/
 extern	int	help();			/* Help key.			*/
 extern	int	bindtokey();		/* Modify key bindings.		*/
 extern	int	wallchart();		/* Make wall chart.		*/
+int	backdir();
 
 typedef	struct	{
 	short	k_key;			/* Key to bind.			*/
@@ -2341,6 +2342,7 @@ typedef	struct	{
  */
 KEY	key[] = {
 	KCTRL|'A',	gotobol,	"goto-bol",
+	KCTRL|'B',	backdir,	"back-dir",
 	KCTRL|'C',	copyregion,	"copy-region",
 	KCTRL|'D',	forwdel,	"forw-del-char",
 	KCTRL|'E',	gotoeol,	"goto-eol",
@@ -3526,6 +3528,7 @@ n=sprintf(s,"%s%s",e->d_name,e->d_type==DT_DIR?"/":"");if((l=lalloc(n))){
 l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
 curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}closedir(d);dirmode=1;
 curwp->w_linep=curwp->w_dotp=lforw(curbp->b_linep);curwp->w_doto=0;curwp->w_flag|=WFHARD;}
+backdir(){filldir(".");return 1;}
 
 /*
  * Take a file name, and from it
