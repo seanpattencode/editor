@@ -1038,10 +1038,10 @@ loop:
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp; curwp->w_doto=x<llength(lp)?x:llength(lp);
-					if(ch=='M'&&!(b&3)){if(dirmode){char f[256];int i,n=llength(lp);
+					if(ch=='M'){if(b>=128){backdir();}else if(!(b&3)){if(dirmode){char f[256];int i,n=llength(lp);
 						for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;
 						if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}}
-					else{curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}}
+					else{curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}}}
 					curwp->w_flag|=WFMOVE; update();
 				}
 				goto loop;
@@ -1060,6 +1060,7 @@ loop:
 					n = 10*n + c - '0';
 					c = ttgetc();
 				} while (c>='0' && c<='9');
+				if(c==';'){c=ttgetc();if(c=='3'&&ttgetc()=='D'){backdir();goto loop;}} /*Alt+Left(vscode)*/
 				if (c=='~' && n<=34) {
 					c = lk201map[n];
 					if (c != KRANDOM)
