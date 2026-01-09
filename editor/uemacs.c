@@ -535,7 +535,7 @@ int	ncol;				/* Terminal size, columns.	*/
 ttopen()
 {
 	/* Save pos+attr, disable margins, set cursor far away, query pos */
-	const char query[] = "\e7" "\e[r" "\e[999;999H" "\e[6n";
+	const char query[] = "\e7\e[r\e[999;999H\e[6n\e[?1006h\e[?1002h";
 	struct pollfd fd = { 1, POLLIN, 0 };
 	int row, col;
 
@@ -577,8 +577,8 @@ ttopen()
  */
 ttclose()
 {
-	ttflush();
-	tcsetattr(1, TCSADRAIN, &oldtty);	/* return to original mode */
+	write(1,"\e[?1002l\e[?1006l",16); ttflush();
+	tcsetattr(1, TCSADRAIN, &oldtty);
 }
 
 /*
@@ -1027,6 +1027,20 @@ loop:
 		c = ttgetc();
 		if (c == '[') {
 			c = ttgetc();
+			if (c == '<') { /* SGR mouse: \e[<btn;x;yM or m */
+				int b=0,x=0,y=0,ch,row; LINE *lp;
+				while((ch=ttgetc())!=';') b=b*10+ch-'0';
+				while((ch=ttgetc())!=';') x=x*10+ch-'0';
+				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
+				x--; y--; row=y-curwp->w_toprow;
+				if(row>=0 && row<curwp->w_ntrows) {
+					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
+					curwp->w_dotp=lp; curwp->w_doto=x<llength(lp)?x:llength(lp);
+					if(ch=='M'&&!(b&3)){curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}
+					curwp->w_flag|=WFMOVE; update();
+				}
+				goto loop;
+			}
 			if (c == 'A')
 				return (KUP);
 			if (c == 'B')
