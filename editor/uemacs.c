@@ -2317,86 +2317,80 @@ typedef	struct	{
 }	KEY;
 
 /*
- * Default key binding table. This contains
- * the function names, the symbol table name, and (possibly)
- * a key binding for the builtin functions. There are no
- * bindings for C-U or C-X. These are done with special
- * code, but should be done normally.
+ * Default key binding table. VSCode-style shortcuts.
+ * Ctrl+C=Copy, Ctrl+V=Paste, Ctrl+X=Cut, Ctrl+S=Save, etc.
  */
 KEY	key[] = {
-	KCTRL|'@',	setmark,	"set-mark",
 	KCTRL|'A',	gotobol,	"goto-bol",
-	KCTRL|'B',	backchar,	"back-char",
-	KCTRL|'C',	spawncli,	"spawn-cli",
+	KCTRL|'C',	copyregion,	"copy-region",
 	KCTRL|'D',	forwdel,	"forw-del-char",
 	KCTRL|'E',	gotoeol,	"goto-eol",
-	KCTRL|'F',	forwchar,	"forw-char",
-	KCTRL|'G',	ctrlg,		"abort",
-	KCTRL|'H',	backdel,	"back-del-char",
+	KCTRL|'F',	forwisearch,	"forw-i-search",
+	KCTRL|'G',	gotoline,	"goto-line",
+	KCTRL|'H',	queryrepl,	"query-replace",
 	KCTRL|'I',	selfinsert,	"ins-self",
 	KCTRL|'J',	indent,		"ins-nl-and-indent",
 	KCTRL|'K',	killline,	"kill-line",
 	KCTRL|'L',	refresh,	"refresh",
 	KCTRL|'M',	newline,	"ins-nl",
 	KCTRL|'N',	forwline,	"forw-line",
-	KCTRL|'O',	openline,	"ins-nl-and-backup",
+	KCTRL|'O',	filevisit,	"file-visit",
 	KCTRL|'P',	backline,	"back-line",
-	KCTRL|'Q',	quote,		"quote",
+	KCTRL|'Q',	quit,		"quit",
 	KCTRL|'R',	backisearch,	"back-i-search",
-	KCTRL|'S',	forwisearch,	"forw-i-search",
-	KCTRL|'T',	twiddle,	"twiddle",
-	KCTRL|'V',	forwpage,	"forw-page",
-	KCTRL|'W',	killregion,	"kill-region",
-	KCTRL|'Y',	yank,		"yank",
+	KCTRL|'S',	filesave,	"file-save",
+	KCTRL|'V',	yank,		"yank",
+	KCTRL|'W',	quit,		"quit",
+	KCTRL|'X',	killregion,	"kill-region",
 	KCTRL|'Z',	jeffexit,	"jeff-exit",
-	KCTLX|KCTRL|'B',listbuffers,	"display-buffers",
-	KCTLX|KCTRL|'C',quit,		"quit",
-#if	DIRLIST
-	KCTLX|KCTRL|'D',dirlist,	"display-directory",
-#endif
-	KCTLX|KCTRL|'F',filename,	"set-file-name",
-	KCTLX|KCTRL|'L',lowerregion,	"lower-region",
-	KCTLX|KCTRL|'N',mvdnwind,	"down-window",
-	KCTLX|KCTRL|'O',deblank,	"del-blank-lines",
-	KCTLX|KCTRL|'P',mvupwind,	"up-window",
-	KCTLX|KCTRL|'R',fileread,	"file-read",
-	KCTLX|KCTRL|'S',filesave,	"file-save",
-	KCTLX|KCTRL|'U',upperregion,	"upper-region",
-	KCTLX|KCTRL|'V',filevisit,	"file-visit",
-	KCTLX|KCTRL|'W',filewrite,	"file-write",
-	KCTLX|KCTRL|'X',swapmark,	"swap-dot-and-mark",
-	KCTLX|KCTRL|'Z',shrinkwind,	"shrink-window",
-	KCTLX|'=',	showcpos,	"display-position",
-	KCTLX|'(',	ctlxlp,		"start-macro",
-	KCTLX|')',	ctlxrp,		"end-macro",
-	KCTLX|'1',	onlywind,	"only-window",
-	KCTLX|'2',	splitwind,	"split-window",
-	KCTLX|'B',	usebuffer,	"use-buffer",
-	KCTLX|'E',	ctlxe,		"execute-macro",
-	KCTLX|'G',	gotoline,	"goto-line",
-	KCTLX|'K',	killbuffer,	"kill-buffer",
-	KCTLX|'N',	nextwind,	"forw-window",
-	KCTLX|'P',	prevwind,	"back-window",
-	KCTLX|'Z',	enlargewind,	"enlarge-window",
-	KMETA|KCTRL|'H',delbword,	"back-del-word",
-	KMETA|KCTRL|'R',readmsg,	"display-message",
-	KMETA|KCTRL|'V',showversion,	"display-version",
-	KMETA|'!',	reposition,	"reposition-window",
-	KMETA|'>',	gotoeob,	"goto-eob",
-	KMETA|'<',	gotobob,	"goto-bob",
-	KMETA|'%',	queryrepl,	"query-replace",
-	KMETA|'B',	backword,	"back-word",
-	KMETA|'C',	capword,	"cap-word",
-	KMETA|'D',	delfword,	"forw-del-word",
-	KMETA|'F',	forwword,	"forw-word",
-	KMETA|'L',	lowerword,	"lower-word",
-	KMETA|'R',	backsearch,	"back-search",
-	KMETA|'S',	forwsearch,	"forw-search",
-	KMETA|'U',	upperword,	"upper-word",
-	KMETA|'V',	backpage,	"back-page",
-	KMETA|'W',	copyregion,	"copy-region",
-	KMETA|'X',	extend,		"extended-command",
+	KCTRL|'\\',	splitwind,	"split-window",
+	KCTRL|'@',	setmark,	"set-mark",
+	-1,		backchar,	"back-char",
+	-1,		forwchar,	"forw-char",
+	-1,		ctrlg,		"abort",
+	-1,		backdel,	"back-del-char",
+	-1,		openline,	"ins-nl-and-backup",
+	-1,		quote,		"quote",
+	-1,		twiddle,	"twiddle",
+	-1,		forwpage,	"forw-page",
+	-1,		backpage,	"back-page",
+	-1,		listbuffers,	"display-buffers",
+	-1,		filename,	"set-file-name",
+	-1,		lowerregion,	"lower-region",
+	-1,		upperregion,	"upper-region",
+	-1,		fileread,	"file-read",
+	-1,		filewrite,	"file-write",
+	-1,		swapmark,	"swap-dot-and-mark",
+	-1,		showcpos,	"display-position",
+	-1,		ctlxlp,		"start-macro",
+	-1,		ctlxrp,		"end-macro",
+	-1,		onlywind,	"only-window",
+	-1,		usebuffer,	"use-buffer",
+	-1,		ctlxe,		"execute-macro",
+	-1,		nextwind,	"forw-window",
+	-1,		prevwind,	"back-window",
+	-1,		enlargewind,	"enlarge-window",
+	-1,		shrinkwind,	"shrink-window",
+	-1,		mvdnwind,	"down-window",
+	-1,		mvupwind,	"up-window",
+	-1,		deblank,	"del-blank-lines",
+	-1,		delbword,	"back-del-word",
+	-1,		delfword,	"forw-del-word",
+	-1,		readmsg,	"display-message",
+	-1,		showversion,	"display-version",
+	-1,		reposition,	"reposition-window",
+	-1,		gotoeob,	"goto-eob",
+	-1,		gotobob,	"goto-bob",
+	-1,		backword,	"back-word",
+	-1,		forwword,	"forw-word",
+	-1,		capword,	"cap-word",
+	-1,		lowerword,	"lower-word",
+	-1,		upperword,	"upper-word",
+	-1,		backsearch,	"back-search",
+	-1,		forwsearch,	"forw-search",
+	-1,		extend,		"extended-command",
 	-1,		searchagain,	"search-again",
+	-1,		spawncli,	"spawn-cli",
 	-1,		help,		"help",
 	-1,		wallchart,	"display-bindings",
 	-1,		bindtokey,	"bind-to-key"
@@ -2445,35 +2439,20 @@ register char	*cp;
 }
 
 /*
- * Build initial keymap. The funny keys
- * (commands, odd control characters) are mapped using
- * a big table and calls to "keyadd". The printing characters
- * are done with some do-it-yourself handwaving. The terminal
- * specific keymap initialization code is called at the
- * very end to finish up. All errors are fatal.
+ * Build initial keymap. VSCode-style bindings.
  */
 keymapinit()
 {
 	register SYMBOL	*sp;
 	register KEY	*kp;
 	register int	i;
-	register int	hash;
 
 	for (i=0; i<NKEYS; ++i)
 		binding[i] = NULL;
 	for (kp = &key[0]; kp < &key[NKEY]; ++kp)
 		keyadd(kp->k_key, kp->k_funcp, kp->k_name);
-	keydup(KCTLX|KCTRL|'G',	"abort");
-	keydup(KMETA|KCTRL|'G',	"abort");
 	keydup(0x7F,		"back-del-char");
-	keydup(KCTLX|'R',	"back-i-search");
-	keydup(KCTLX|'S',	"forw-i-search");
-	keydup(KMETA|'.',	"set-mark");
-	keydup(KMETA|'Q',	"quote");
-	keydup(KMETA|0x7F,	"back-del-word");
-	/*
-	 * Should be bound by "tab" already.
-	 */
+	keydup(KCTRL|'[',	"abort");
 	if ((sp=symlookup("ins-self")) == NULL)
 		abort();
 	for (i=0x20; i<0x7F; ++i) {
