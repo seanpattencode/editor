@@ -1,1 +1,5 @@
-mkdir -p ~/.local/bin && gcc -w -std=gnu89 -o ~/.local/bin/e e.c && grep -q 'export PATH="\$HOME/.local/bin:\$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
+# Ubuntu/Debian (gcc)
+mkdir -p ~/.local/bin && gcc -w -std=gnu89 -o ~/.local/bin/e e.c && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
+
+# Termux (clang)
+mkdir -p ~/.local/bin && sed 's/, NULL)/, (va_list){0})/g' e.c | clang -w -Wno-everything -std=gnu89 -x c -o ~/.local/bin/e - && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
