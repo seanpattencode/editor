@@ -579,7 +579,7 @@ ttopen()
  */
 ttclose()
 {
-	write(1,"\e[?1002l\e[?1006l",16); ttflush();
+	write(1,"\e[?1002l\e[?1006l\e[2J\e[H",23); ttflush();
 	tcsetattr(1, TCSADRAIN, &oldtty);
 }
 
@@ -3528,7 +3528,7 @@ n=sprintf(s,"%s%s",e->d_name,e->d_type==DT_DIR?"/":"");if((l=lalloc(n))){
 l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
 curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}closedir(d);dirmode=1;
 curwp->w_linep=curwp->w_dotp=lforw(curbp->b_linep);curwp->w_doto=0;curwp->w_flag|=WFHARD;}
-backdir(){filldir(".");return 1;}
+backdir(){return quit(0,0,0);}
 
 /*
  * Take a file name, and from it
@@ -6789,20 +6789,14 @@ register char	buf[];
 		if (c == '\r') {		/* Delete any non-stray	*/
 			c = getc(ffp);		/* carriage returns.	*/
 			if (c != '\n') {
-				if (i >= nbuf-1) {
-					eprintf("File has long line");
-					return (FIOERR);
-				}
-				buf[i++] = '\r';
+				if (i < nbuf-1)
+					buf[i++] = '\r';
 			}
 		}
 		if (c==EOF || c=='\n')		/* End of line.		*/
 			break;
-		if (i >= nbuf-1) {
-			eprintf("File has long line");
-			return (FIOERR);
-		}
-		buf[i++] = c;
+		if (i < nbuf-1)
+			buf[i++] = c;
 	}
 	if (c == EOF) {				/* End of file.		*/
 		if (ferror(ffp) != FALSE) {
