@@ -1030,7 +1030,7 @@ loop:
 		if (c == '[') {
 			c = ttgetc();
 			if (c == '<') { /* SGR mouse: \e[<btn;x;yM or m */
-				int b=0,x=0,y=0,ch,row; LINE *lp;
+				int b=0,x=0,y=0,ch,row,h; LINE *lp;
 				while((ch=ttgetc())!=';') b=b*10+ch-'0';
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
 				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
@@ -1038,8 +1038,8 @@ loop:
 				if(b&32)goto loop;
 				x--; y--; row=y-curwp->w_toprow;
 				if(row>=0 && row<curwp->w_ntrows) {
-					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
-					curwp->w_dotp=lp; curwp->w_doto=x<llength(lp)?x:llength(lp);
+					for(lp=curwp->w_linep;h=1+llength(lp)/ncol,row>=h&&lp!=curbp->b_linep;row-=h)lp=lforw(lp);
+					curwp->w_dotp=lp;x+=row*ncol;{int i,c;for(i=c=0;i<llength(lp)&&c<x;c=lgetc(lp,i++)==9?(c|7)+1:c+1);curwp->w_doto=i;}
 					if(ch=='M'){if(b>=128&&!(b&32)){backdir();}else if(!(b&3)&&!(b&32)){if(dirmode){char f[256];int i,n=llength(lp);
 						for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;
 						if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}}
