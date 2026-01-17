@@ -1034,7 +1034,8 @@ loop:
 				while((ch=ttgetc())!=';') b=b*10+ch-'0';
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
 				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
-				if(b>=64&&b<128)return(b&1)?KDOWN:KUP;
+				if(b>=64&&b<128){b&1?forwline(0,4,0):backline(0,4,0);update();goto loop;}
+				if(b&32)goto loop;
 				x--; y--; row=y-curwp->w_toprow;
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
