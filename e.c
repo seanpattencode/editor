@@ -517,7 +517,7 @@ char	cinfo[256] = {
  */
 
 #include	<termios.h>
-#include	<poll.h>
+#include	<sys/ioctl.h>
 
 #define	NOBUF	512			/* Output buffer size.		*/
 
@@ -537,10 +537,7 @@ int	ncol;				/* Terminal size, columns.	*/
  */
 ttopen()
 {
-	/* Save pos+attr, disable margins, set cursor far away, query pos */
-	const char query[] = "\e7\e[r\e[999;999H\e[6n\e[?1006h\e[?1002h";
-	struct pollfd fd = { 1, POLLIN, 0 };
-	int row, col;
+	struct winsize ws;
 
 	/* Adjust output channel */
 	tcgetattr(1, &oldtty);			/* save old state */
@@ -558,19 +555,22 @@ ttopen()
 
 	tcsetattr(1, TCSADRAIN, &newtty); tcflush(0, TCIFLUSH);
 
-	/* Query size of terminal by first trying to position cursor */
-	if (write(1, query, sizeof(query)) != -1 && poll(&fd, 1, 300) > 0) {
-		/* Terminal responds with \e[row;posR */
-		if (scanf("\e[%d;%dR", &nrow, &ncol) != 2) {
-			nrow = 80;
-			ncol = 24;
-		}
+	/* Get terminal size via ioctl (fast) instead of escape sequence query */
+	if (ioctl(0, TIOCGWINSZ, &ws) == 0 && ws.ws_row && ws.ws_col) {
+		nrow = ws.ws_row;
+		ncol = ws.ws_col;
+	} else {
+		nrow = 24;
+		ncol = 80;
 	}
 
 	if (nrow > NROW)
 		nrow = NROW;
 	if (ncol > NCOL)
 		ncol = NCOL;
+
+	/* Enable mouse tracking */
+	write(1, "\e[?1006h\e[?1002h", 16);
 }
 
 /*
