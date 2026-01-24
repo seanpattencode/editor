@@ -1036,13 +1036,13 @@ loop:
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
 				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
 				if(b>=64&&b<128){b&1?forwline(0,4,0):backline(0,4,0);update();goto loop;}
-				if(b&32)goto loop;
 				x--; y--; row=y-curwp->w_toprow;
-				if(y==0&&x>=ncol-3&&ch=='M'){quit(0,0,0);goto loop;}
 				if(x==ncol-1&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
 					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t++;
 					g=row*t/curwp->w_ntrows;for(p=lforw(curbp->b_linep);g>0&&p!=curbp->b_linep;g--)p=lforw(p);
 					curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
+				if(b&32)goto loop;
+				if(y==0&&x>=ncol-3&&ch=='M'){quit(0,0,0);goto loop;}
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp;{int i,c;for(i=c=0;i<llength(lp)&&c<x;c=lgetc(lp,i++)==9?(c|7)+1:c+1);curwp->w_doto=i;}
