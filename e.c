@@ -1035,7 +1035,9 @@ loop:
 				while((ch=ttgetc())!=';') b=b*10+ch-'0';
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
 				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
-				if(b>=64&&b<128){b&1?forwline(0,4,0):backline(0,4,0);update();goto loop;}
+				if(b>=64&&b<128){int i;LINE*p=curwp->w_linep;
+				for(i=0;i<4;i++){LINE*n=b&1?lforw(p):lback(p);if(n!=curbp->b_linep)p=n;}
+				curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
 				x--; y--; row=y-curwp->w_toprow;
 				if(x>=(b&32?ncol/2:ncol-2)&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
 					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t++;
