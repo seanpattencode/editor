@@ -96,6 +96,7 @@
 #include	<string.h>
 #include	<dirent.h>
 int dirmode;
+int sb_top, sb_bot;  /* scrollbar thumb top/bottom rows */
 
 #define	CVMVAS	1			/* C-V, M-V work in pages.	*/
 #define	BACKUP	0			/* Make backup file.		*/
@@ -1038,6 +1039,10 @@ loop:
 				if(b&32)goto loop;
 				x--; y--; row=y-curwp->w_toprow;
 				if(y==0&&x>=ncol-3&&ch=='M'){quit(0,0,0);goto loop;}
+				if(x==ncol-1&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
+					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t++;
+					g=row*t/curwp->w_ntrows;for(p=lforw(curbp->b_linep);g>0&&p!=curbp->b_linep;g--)p=lforw(p);
+					curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp;{int i,c;for(i=c=0;i<llength(lp)&&c<x;c=lgetc(lp,i++)==9?(c|7)+1:c+1);curwp->w_doto=i;}
@@ -6134,6 +6139,8 @@ vteeol()
 	while (vtcol < ncol)
 		vp->v_text[vtcol++] = ' ';
 	if(vtrow==0){vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
+	else if(vtrow>=curwp->w_toprow&&vtrow<curwp->w_toprow+curwp->w_ntrows)
+		vp->v_text[ncol-1]=(vtrow>=sb_top&&vtrow<=sb_bot)?'#':'.';
 }
 
 /*
@@ -6169,6 +6176,8 @@ update()
 	}
 	curmsgf = newmsgf;			/* Sync. up right now.	*/
 	hflag = FALSE;				/* Not hard.		*/
+	{int t=0,a=0,h;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
+	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+h*h/t;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;if(sb_bot<sb_top)sb_bot=sb_top;}
 	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_flag != 0) {		/* Need update.		*/
