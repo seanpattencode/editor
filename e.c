@@ -6265,6 +6265,7 @@ update()
 			uline(i, vscreen[i], &blanks);
 			ucopy(vscreen[i], pscreen[i]);
 		}
+		ttcolor(CTEXT);ttmove(0,ncol-3);ttputc('[');ttputc('X');ttputc(']');
 		ttmove(currow, curcol);
 		ttflush();
 		return;
