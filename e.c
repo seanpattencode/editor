@@ -6133,6 +6133,7 @@ vteeol()
 	vp = vscreen[vtrow];
 	while (vtcol < ncol)
 		vp->v_text[vtcol++] = ' ';
+	if(vtrow==0){vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
 }
 
 /*
@@ -6265,7 +6266,6 @@ update()
 			uline(i, vscreen[i], &blanks);
 			ucopy(vscreen[i], pscreen[i]);
 		}
-		ttcolor(CTEXT);ttmove(0,ncol-3);ttputc('[');ttputc('X');ttputc(']');
 		ttmove(currow, curcol);
 		ttflush();
 		return;
@@ -6322,7 +6322,6 @@ update()
 			ucopy(vp1, vp2);
 		}
 	}
-	ttcolor(CTEXT);ttmove(0,ncol-3);ttputc('[');ttputc('X');ttputc(']');
 	ttmove(currow, curcol);
 	ttflush();
 }
