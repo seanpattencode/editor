@@ -6140,7 +6140,7 @@ vteeol()
 		vp->v_text[vtcol++] = ' ';
 	if(vtrow==0){vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
 	else if(vtrow>=curwp->w_toprow&&vtrow<curwp->w_toprow+curwp->w_ntrows)
-		vp->v_text[ncol-1]=(vtrow>=sb_top&&vtrow<=sb_bot)?'#':'.';
+		vp->v_text[ncol-1]=(vtrow>=sb_top&&vtrow<=sb_bot)?'|':' ';
 }
 
 /*
