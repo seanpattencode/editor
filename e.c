@@ -6236,6 +6236,8 @@ update()
 		}		
 		wp = wp->w_wndp;
 	}
+	{int t=0,a=0;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
+	if(t>0){int r=curwp->w_toprow+(a*curwp->w_ntrows/t);if(r>=curwp->w_toprow&&r<curwp->w_toprow+curwp->w_ntrows)vscreen[r]->v_text[ncol-1]='#';}}
 	lp = curwp->w_linep;			/* Cursor location.	*/
 	currow = curwp->w_toprow;
 	while (lp != curwp->w_dotp) {
