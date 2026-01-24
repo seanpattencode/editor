@@ -1037,6 +1037,7 @@ loop:
 				if(b>=64&&b<128){b&1?forwline(0,4,0):backline(0,4,0);update();goto loop;}
 				if(b&32)goto loop;
 				x--; y--; row=y-curwp->w_toprow;
+				if(y==0&&x>=ncol-3&&ch=='M'){quit(0,0,0);goto loop;}
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp;{int i,c;for(i=c=0;i<llength(lp)&&c<x;c=lgetc(lp,i++)==9?(c|7)+1:c+1);curwp->w_doto=i;}
@@ -6320,6 +6321,7 @@ update()
 			ucopy(vp1, vp2);
 		}
 	}
+	ttmove(0,ncol-3);ttputc('[');ttputc('X');ttputc(']');
 	ttmove(currow, curcol);
 	ttflush();
 }
