@@ -6178,7 +6178,7 @@ update()
 	curmsgf = newmsgf;			/* Sync. up right now.	*/
 	hflag = FALSE;				/* Not hard.		*/
 	{int t=0,a=0,h;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
-	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+h*h/t;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;if(sb_bot<sb_top)sb_bot=sb_top;}
+	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+1;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;}
 	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_flag != 0) {		/* Need update.		*/
