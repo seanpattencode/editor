@@ -3889,6 +3889,8 @@ selfinsert(f, n, k)
 {
 	register int	c;
 
+	if (dirmode)
+		return (TRUE);
 	if (n < 0)
 		return (FALSE);
 	if (n == 0)
