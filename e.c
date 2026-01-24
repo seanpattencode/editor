@@ -6321,7 +6321,7 @@ update()
 			ucopy(vp1, vp2);
 		}
 	}
-	ttmove(0,ncol-3);ttputc('[');ttputc('X');ttputc(']');
+	ttcolor(CTEXT);ttmove(0,ncol-3);ttputc('[');ttputc('X');ttputc(']');
 	ttmove(currow, curcol);
 	ttflush();
 }
