@@ -1,40 +1,23 @@
 #!/bin/bash
-# Realistic startup benchmark - measures time to first render
+# startup benchmark
 
-tmpf=$(mktemp)
+bench() {
+    name=$1
+    cmd=$2
+    command -v ${cmd%% *} >/dev/null || { echo "$name: not installed"; return; }
+    echo "$name startup time (3 runs)"
+    for i in 1 2 3; do
+        start=$EPOCHREALTIME
+        $cmd </dev/null >/dev/null 2>&1 & pid=$!
+        sleep 0.001
+        kill $pid 2>/dev/null
+        end=$EPOCHREALTIME
+        python3 -c "print(f'{$end - $start:.3f} s')"
+    done
+    echo ""
+}
 
-echo "Editor startup+quit (time to render)"
-echo "======================================"
-
-# e - pty with actual render, quit with C-x C-c
-start=$(date +%s.%N)
-script -q -c "echo -ne '\x18\x03' | ./e demo.txt" /dev/null >/dev/null 2>&1
-end=$(date +%s.%N)
-printf "%-12s %.3f s\n" "e:" $(echo "$end - $start" | bc)
-
-# neovim - real TUI in pty
-start=$(date +%s.%N)
-script -q -c "nvim +q demo.txt" /dev/null >/dev/null 2>&1
-end=$(date +%s.%N)
-printf "%-12s %.3f s\n" "neovim:" $(echo "$end - $start" | bc)
-
-# emacs - real TUI in pty
-start=$(date +%s.%N)
-script -q -c "emacs -nw -Q demo.txt --eval '(kill-emacs)'" /dev/null >/dev/null 2>&1
-end=$(date +%s.%N)
-printf "%-12s %.3f s\n" "emacs:" $(echo "$end - $start" | bc)
-
-# vscode - wait for window to actually appear
-if command -v xdotool &>/dev/null; then
-    start=$(date +%s.%N)
-    code -n demo.txt &
-    pid=$!
-    while ! xdotool search --name "demo.txt" >/dev/null 2>&1; do sleep 0.05; done
-    end=$(date +%s.%N)
-    kill $pid 2>/dev/null; sleep 0.1; pkill -f "code.*demo" 2>/dev/null
-    printf "%-12s %.3f s\n" "vscode:" $(echo "$end - $start" | bc)
-else
-    echo "vscode:      (install xdotool for window detection)"
-fi
-
-rm -f "$tmpf"
+bench "e" ~/.local/bin/e
+bench "vim" vim
+bench "neovim" nvim
+bench "emacs" "emacs -nw -Q"

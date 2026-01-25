@@ -1,3 +1,11 @@
+# Startup time (ms)
+
+| e | vim | emacs | neovim |
+|---|-----|-------|--------|
+| 3 | 5   | 4     | 88     |
+
+bench/bench.sh
+
 # Compile from source (requires gcc/clang)
 
 # Ubuntu/Debian
