@@ -1,5 +1,11 @@
-# Ubuntu/Debian (gcc)
-mkdir -p ~/.local/bin && gcc -w -std=gnu89 -o ~/.local/bin/e e.c && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
+# Compile from source (requires gcc/clang)
 
-# Termux (clang)
-mkdir -p ~/.local/bin && sed 's/, NULL)/, (va_list){0})/g' e.c | clang -w -Wno-everything -std=gnu89 -x c -o ~/.local/bin/e - && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
+# Ubuntu/Debian
+mkdir -p ~/.local/bin && gcc -w -std=gnu89 -o ~/.local/bin/e ~/projects/editor/e.c && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
+
+# Termux
+mkdir -p ~/.local/bin && sed 's/, NULL)/, (va_list){0})/g' ~/projects/editor/e.c | clang -w -Wno-everything -std=gnu89 -x c -o ~/.local/bin/e - && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
+
+# Use pre-built binary (no compiler needed)
+
+mkdir -p ~/.local/bin && cp ~/projects/editor/e ~/.local/bin/ && chmod +x ~/.local/bin/e && grep -q 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
