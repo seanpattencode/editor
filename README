@@ -1,8 +1,8 @@
 # Startup time (ms)
 
-| e | vim | emacs | neovim |
-|---|-----|-------|--------|
-| 3 | 5   | 4     | 88     |
+| e | emacs | neovim |
+|---|-------|--------|
+| 1 | 50    | 75     |
 
 bench/bench.sh
 
