@@ -1050,7 +1050,7 @@ loop:
 					curwp->w_dotp=lp;{int i,c;for(i=c=0;i<llength(lp)&&c<x;c=lgetc(lp,i++)==9?(c|7)+1:c+1);curwp->w_doto=i;}
 					if(ch=='M'){if(b>=128&&!(b&32)){backdir();}else if(!(b&3)&&!(b&32)){if(dirmode){char f[256];int i,n=llength(lp);
 						for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;
-						if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}}
+						if(n>1&&f[0]=='>')filldir(f+2);else{dirmode=0;readin(f+2);}}
 					else{curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}}}
 					curwp->w_flag|=WFMOVE; update();
 				}
@@ -3534,7 +3534,7 @@ out:
 filldir(p)char*p;{DIR*d;struct dirent*e;LINE*l;int n;char s[256];
 if(!(d=opendir(p)))return;bclear(curbp);chdir(p);getcwd(curbp->b_fname,NFILEN);
 while((e=readdir(d))){if(e->d_name[0]=='.'&&!e->d_name[1])continue;
-n=sprintf(s,"%s%s",e->d_name,e->d_type==DT_DIR?"/":"");if((l=lalloc(n))){
+n=sprintf(s,"%s%s",e->d_type==DT_DIR?"> ":"  ",e->d_name);if((l=lalloc(n))){
 l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
 curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}closedir(d);dirmode=1;
 curwp->w_linep=curwp->w_dotp=lforw(curbp->b_linep);curwp->w_doto=0;curwp->w_flag|=WFHARD;}
@@ -3948,7 +3948,7 @@ newline(f, n, k)
 {
 	register LINE	*lp;
 	register int	s;
-	if(dirmode){lp=curwp->w_dotp;char f[256];int i,n=llength(lp);for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;if(n&&f[n-1]=='/')filldir(f);else{dirmode=0;readin(f);}return TRUE;}
+	if(dirmode){lp=curwp->w_dotp;char f[256];int i,n=llength(lp);for(i=0;i<n;i++)f[i]=lgetc(lp,i);f[n]=0;if(n>1&&f[0]=='>')filldir(f+2);else{dirmode=0;readin(f+2);}return TRUE;}
 	if (n < 0)
 		return (FALSE);
 	while (n--) {
