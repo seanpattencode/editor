@@ -3531,12 +3531,15 @@ out:
 	return (TRUE);
 }
 
-filldir(p)char*p;{DIR*d;struct dirent*e;LINE*l;int n;char s[256];
+typedef struct{char n[256];char d;}Dent;
+int dentcmp(const void*a,const void*b){Dent*x=(Dent*)a,*y=(Dent*)b;if(x->d!=y->d)return y->d-x->d;return strcasecmp(x->n,y->n);}
+filldir(p)char*p;{DIR*d;struct dirent*e;LINE*l;int n,c=0,i;char s[256];Dent ents[4096];
 if(!(d=opendir(p)))return;bclear(curbp);chdir(p);getcwd(curbp->b_fname,NFILEN);
-while((e=readdir(d))){if(e->d_name[0]=='.'&&!e->d_name[1])continue;
-n=sprintf(s,"%s%s",e->d_type==DT_DIR?"> ":"  ",e->d_name);if((l=lalloc(n))){
+while((e=readdir(d))&&c<4096){if(e->d_name[0]=='.'&&!e->d_name[1])continue;ents[c].d=e->d_type==DT_DIR;strcpy(ents[c++].n,e->d_name);}
+closedir(d);qsort(ents,c,sizeof(Dent),dentcmp);for(i=0;i<c;i++){
+n=sprintf(s,"%s%s",ents[i].d?"> ":"  ",ents[i].n);if((l=lalloc(n))){
 l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
-curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}closedir(d);dirmode=1;
+curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}dirmode=1;
 curwp->w_linep=curwp->w_dotp=lforw(curbp->b_linep);curwp->w_doto=0;curwp->w_flag|=WFHARD;}
 backdir(){if(dirmode){filldir("..");}else{char d[80],*p;strcpy(d,curbp->b_fname);p=strrchr(d,'/');if(p)*p=0;else*d=0;filldir(*d?d:".");}return TRUE;}
 
