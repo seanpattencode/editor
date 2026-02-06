@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import subprocess as sp
+out = sp.run(["tmux", "list-keys"], capture_output=True, text=True).stdout
+if "C-f" not in out: print("No Ctrl+F conflict found"); exit()
+print("Found: tmux intercepts Ctrl+F (used for copy-mode search)")
+for l in out.split("\n"):
+    if "C-f" in l: print(f"  {l.strip()}")
+if input("Unbind C-f? [y/N] ").lower() == "y":
+    sp.run(["tmux", "unbind", "-n", "C-f"]); print("Unbound. Ctrl+F now goes to apps.")

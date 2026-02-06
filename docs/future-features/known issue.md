@@ -1,0 +1,1 @@
+e formatting gets screwed up when the window is resized. 
