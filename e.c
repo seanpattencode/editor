@@ -6146,7 +6146,7 @@ vteeol()
 	if(vtrow==0){vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
 	else if(vtrow>=curwp->w_toprow&&vtrow<curwp->w_toprow+curwp->w_ntrows){
 		int thumb=vtrow>=sb_top&&vtrow<=sb_bot;
-		vp->v_text[ncol-2]=thumb?'|':' ';vp->v_text[ncol-1]=thumb?'|':'.';}
+		vp->v_text[ncol-2]=thumb?'|':' ';vp->v_text[ncol-1]=thumb?'|':' ';}
 }
 
 /*
