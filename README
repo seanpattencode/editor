@@ -1,8 +1,8 @@
-# Startup time (ms)
+# Startup time (ms, real TUI via pty)
 
 | e | emacs | neovim |
 |---|-------|--------|
-| 1 | 50    | 75     |
+| 0 | 46    | 1008   |
 
 bench/bench.sh
 
