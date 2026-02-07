@@ -97,7 +97,7 @@
 #include	<dirent.h>
 int dirmode;
 int sb_top, sb_bot;  /* scrollbar thumb top/bottom rows */
-int uc[4096],ut;
+int uc[4096],ut,ul;
 
 #define	CVMVAS	1			/* C-V, M-V work in pages.	*/
 #define	BACKUP	0			/* Make backup file.		*/
@@ -1782,7 +1782,7 @@ linsert(n, c)
 	register int	i;
 	register WINDOW	*wp;
 
-	uc[ut++&4095]=c;
+	if(!ul)uc[ut++&4095]=c;
 	lchange(WFEDIT);
 	lp1 = curwp->w_dotp;			/* Current line		*/
 	if (lp1 == curbp->b_linep) {		/* At the end: special	*/
@@ -1868,7 +1868,7 @@ lnewline()
 	register int	doto;
 	register WINDOW	*wp;
 
-	uc[ut++&4095]=0;
+	if(!ul)uc[ut++&4095]=0;
 	lchange(WFHARD);
 	lp1  = curwp->w_dotp;			/* Get the address and	*/
 	doto = curwp->w_doto;			/* offset of "."	*/
@@ -1934,6 +1934,7 @@ ldelete(n, kflag)
 		if (chunk > n)
 			chunk = n;
 		if (chunk == 0) {		/* End of line, merge.	*/
+			if(!ul)uc[ut++&4095]=-256;
 			lchange(WFHARD);
 			if (ldelnewline() == FALSE
 			|| (kflag!=FALSE && kinsert('\n')==FALSE))
@@ -1942,6 +1943,7 @@ ldelete(n, kflag)
 			continue;
 		}
 		lchange(WFEDIT);
+		if(!ul){int i_;for(i_=0;i_<chunk;i_++)uc[ut++&4095]=-lgetc(dotp,doto+i_);}
 		cp1 = &dotp->l_text[doto];	/* Scrunch text.	*/
 		cp2 = cp1 + chunk;
 		if (kflag != FALSE) {		/* Kill?		*/
@@ -7147,7 +7149,7 @@ char	bname[];
  * interpreter in a subjob. Two of these will get you
  * out. Bound to "C-Z".
  */
-undo(f,n,k){if(!ut)return FALSE;backchar(FALSE,1,KRANDOM);lchange(WFHARD);if(uc[--ut&4095])ldelete(1,FALSE);else ldelnewline();return TRUE;}
+undo(f,n,k){int c;if(!ut)return FALSE;c=uc[--ut&4095];ul=1;if(c>0){backchar(FALSE,1,KRANDOM);ldelete(1,FALSE);}else if(!c){backchar(FALSE,1,KRANDOM);ldelnewline();}else if(c>-256)linsert(1,-c);else lnewline();ul=0;lchange(WFHARD);return TRUE;}
 jeffexit(f, n, k)
 {
 	if ((curbp->b_flag&BFCHG) != 0)		/* Changed.		*/
