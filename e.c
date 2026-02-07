@@ -97,6 +97,7 @@
 #include	<dirent.h>
 int dirmode;
 int sb_top, sb_bot;  /* scrollbar thumb top/bottom rows */
+int uc[4096],ut;
 
 #define	CVMVAS	1			/* C-V, M-V work in pages.	*/
 #define	BACKUP	0			/* Make backup file.		*/
@@ -1781,6 +1782,7 @@ linsert(n, c)
 	register int	i;
 	register WINDOW	*wp;
 
+	uc[ut++&4095]=c;
 	lchange(WFEDIT);
 	lp1 = curwp->w_dotp;			/* Current line		*/
 	if (lp1 == curbp->b_linep) {		/* At the end: special	*/
@@ -1866,6 +1868,7 @@ lnewline()
 	register int	doto;
 	register WINDOW	*wp;
 
+	uc[ut++&4095]=0;
 	lchange(WFHARD);
 	lp1  = curwp->w_dotp;			/* Get the address and	*/
 	doto = curwp->w_doto;			/* offset of "."	*/
@@ -2220,6 +2223,7 @@ extern	int	ctlxlp();		/* Begin macro			*/
 extern	int	ctlxrp();		/* End macro			*/
 extern	int	ctlxe();		/* Execute macro		*/
 extern	int	jeffexit();		/* Jeff Lomicka style exit.	*/
+extern	int	undo();
 extern  int	showversion();		/* Show version numbers, etc.	*/
 
 /*
@@ -2373,7 +2377,7 @@ KEY	key[] = {
 	KCTRL|'V',	yank,		"yank",
 	KCTRL|'W',	quit,		"quit",
 	KCTRL|'X',	killregion,	"kill-region",
-	KCTRL|'Z',	jeffexit,	"jeff-exit",
+	KCTRL|'Z',	undo,		"undo",
 	KCTRL|'\\',	splitwind,	"split-window",
 	KCTRL|'@',	setmark,	"set-mark",
 	-1,		backchar,	"back-char",
@@ -7143,6 +7147,7 @@ char	bname[];
  * interpreter in a subjob. Two of these will get you
  * out. Bound to "C-Z".
  */
+undo(f,n,k){if(!ut)return FALSE;backchar(FALSE,1,KRANDOM);lchange(WFHARD);if(uc[--ut&4095])ldelete(1,FALSE);else ldelnewline();return TRUE;}
 jeffexit(f, n, k)
 {
 	if ((curbp->b_flag&BFCHG) != 0)		/* Changed.		*/
