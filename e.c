@@ -7168,15 +7168,8 @@ jeffexit(f, n, k)
  */
 quit(f, n, k)
 {
-	register int	s;
-
-	if (f != FALSE				/* Argument forces it.	*/
-	|| anycb() == FALSE			/* All buffers clean.	*/
-	|| (s=eyesno("Quit")) == TRUE) {	/* User says it's OK.	*/
-		vttidy();
-		exit(GOOD);
-	}
-	return (s);
+	vttidy();
+	exit(GOOD);
 }
 
 /*
