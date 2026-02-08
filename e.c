@@ -97,7 +97,7 @@
 #include	<dirent.h>
 int dirmode;
 int sb_top, sb_bot;  /* scrollbar thumb top/bottom rows */
-int uc[4096],ut,ul;
+int uc[4096],ut,ul,hoff;
 
 #define	CVMVAS	1			/* C-V, M-V work in pages.	*/
 #define	BACKUP	0			/* Make backup file.		*/
@@ -6121,6 +6121,7 @@ register int	c;
 	register VIDEO	*vp;
 
 	vp = vscreen[vtrow];
+	if(vtcol<0){vtcol++;return;}
 	if (vtcol >= ncol)
 		vp->v_text[ncol-1] = '$';
 	else if (c == '\t') {
@@ -6190,6 +6191,7 @@ update()
 	hflag = FALSE;				/* Not hard.		*/
 	{int t=0,a=0,h;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
 	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+h/6;if(sb_bot<sb_top+2)sb_bot=sb_top+2;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;}
+	{int _i=0,_c=0;while(_i<curwp->w_doto){if(lgetc(curwp->w_dotp,_i)=='\t')_c|=7;_i++;_c++;}hoff=_c>ncol-4?_c-ncol+8:0;}
 	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_flag != 0) {		/* Need update.		*/
@@ -6231,7 +6233,7 @@ update()
 				}
 				vscreen[i]->v_color = CTEXT;
 				vscreen[i]->v_flag |= (VFCHG|VFHBAD);
-				vtmove(i, 0);
+				vtmove(i, -hoff);
 				for (j=0; j<llength(lp); ++j)
 					vtputc(lgetc(lp, j));
 				vteeol();
@@ -6240,7 +6242,7 @@ update()
 				while (i < wp->w_toprow+wp->w_ntrows) {
 					vscreen[i]->v_color = CTEXT;
 					vscreen[i]->v_flag |= (VFCHG|VFHBAD);
-					vtmove(i, 0);
+					vtmove(i, -hoff);
 					if (lp != wp->w_bufp->b_linep) {
 						for (j=0; j<llength(lp); ++j)
 							vtputc(lgetc(lp, j));
@@ -6273,6 +6275,7 @@ update()
 			++curcol;
 		++curcol;
 	}
+	curcol-=hoff;
 	if (curcol >= ncol)			/* Long line.		*/
 		curcol = ncol-1;
 	if (sgarbf != FALSE) {			/* Screen is garbage.	*/
