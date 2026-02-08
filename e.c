@@ -2360,7 +2360,7 @@ KEY	key[] = {
 	KCTRL|'A',	gotobol,	"goto-bol",
 	KCTRL|'B',	backdir,	"back-dir",
 	KCTRL|'C',	copyregion,	"copy-region",
-	KCTRL|'D',	forwdel,	"forw-del-char",
+	KCTRL|'D',	quit,		"quit",
 	KCTRL|'E',	gotoeol,	"goto-eol",
 	KCTRL|'F',	forwisearch,	"forw-i-search",
 	KCTRL|'G',	gotoline,	"goto-line",
