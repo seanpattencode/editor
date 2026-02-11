@@ -4735,7 +4735,7 @@ update(void)
 	hflag = FALSE;
 	{int t=0,a=0,h;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
 	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+h/6;if(sb_bot<sb_top+2)sb_bot=sb_top+2;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;}
-	{int _i=0,_c=0;while(_i<curwp->w_doto){if(lgetc(curwp->w_dotp,_i)=='\t')_c|=7;_i++;_c++;}hoff=_c>ncol-4?_c-ncol+8:0;}
+	{int _i=0,_c=0,_oh=hoff;while(_i<curwp->w_doto){if(lgetc(curwp->w_dotp,_i)=='\t')_c|=7;_i++;_c++;}hoff=_c>ncol-4?_c-ncol+8:0;if(hoff!=_oh)curwp->w_flag|=WFHARD;}
 	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_flag != 0) {
