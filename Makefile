@@ -34,7 +34,7 @@ LINK_HARDEN = -Wl,-z,relro,-z,now
 
 e: e.c
 	$(CC) $(WARN) $(HARDEN) -fsyntax-only $< & P1=$$!; \
-	$(CC) -std=gnu89 -O2 -w -o $@ $< & P2=$$!; \
+	$(CC) -std=gnu89 -O3 -march=native -flto -w -o $@ $< & P2=$$!; \
 	wait $$P1 && wait $$P2
 
 debug: e.c
