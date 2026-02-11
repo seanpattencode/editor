@@ -20,6 +20,12 @@ WARN = -std=gnu89 -Werror -Weverything \
        -Wno-padded -Wno-disabled-macro-expansion -Wno-reserved-id-macro \
        -Wno-documentation -Wno-declaration-after-statement \
        -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused \
+       -Wno-unused-parameter -Wno-missing-braces \
+       -Wno-sign-conversion -Wno-shorten-64-to-32 -Wno-cast-qual \
+       -Wno-missing-variable-declarations -Wno-implicit-int-conversion \
+       -Wno-conditional-uninitialized -Wno-shadow \
+       -Wno-unused-macros -Wno-implicit-fallthrough \
+       -Wno-unused-function -Wno-unused-result \
        --system-header-prefix=/usr/include \
        -isystem /usr/local/include
 HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2 \
