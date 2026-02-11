@@ -2,7 +2,7 @@
 #   Pass 1: -Werror -Weverything + hardening flags, -fsyntax-only
 #            Validates all warnings and hardening compatibility.
 #            No binary emitted — pure compile-time checking (~60ms).
-#   Pass 2: -O2 -w, no extra flags
+#   Pass 2: -O3 -march=native -flto -w, no extra flags
 #            Emits the actual binary. Pure optimized code, no overhead
 #            from warnings or hardening codegen.
 #
@@ -12,7 +12,7 @@
 # is discarded.
 #
 # Result: strictest possible validation with zero cost to the binary.
-#   make          bare -O2 binary, validated by -Weverything + hardening
+#   make          -O3 -march=native -flto binary, validated by -Weverything + hardening
 #   make debug    all flags combined + ASan/UBSan/IntSan -O1 -g
 
 CC = clang
