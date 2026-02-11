@@ -1,4 +1,15 @@
-/* e editor - fork of MicroEMACS by Dave Conroy. https://github.com/seanpattencode/editor */
+/*
+ * e.c - e editor, fork of MicroEMACS by Dave Conroy.
+ *        https://github.com/seanpattencode/editor
+ *
+ * Build (parallel split — zero overhead from strict checks):
+ *   make          two clang passes run simultaneously:
+ *                   1) -Werror -Weverything + hardening -fsyntax-only (validate)
+ *                   2) -O2 -w bare                                    (emit binary)
+ *                 validation finishes inside the compile, so all checks
+ *                 are free. Binary is pure -O2 with no extra codegen.
+ *   make debug    all flags combined + ASan/UBSan/IntSan -O1 -g
+ */
 #define	PCC	1			/* "[]" gets an error.		*/
 #define	KBLOCK	8192			/* Kill grow.			*/
 #define	GOOD	0			/* Good exit status.		*/
