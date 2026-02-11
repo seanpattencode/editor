@@ -1,11 +1,4 @@
-/*
- * Name:	MicroEMACS
- *		Ultrix-32 system header file.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
+/* e editor - fork of MicroEMACS by Dave Conroy. https://github.com/seanpattencode/editor */
 #define	PCC	1			/* "[]" gets an error.		*/
 #define	KBLOCK	8192			/* Kill grow.			*/
 #define	GOOD	0			/* Good exit status.		*/
@@ -19,14 +12,6 @@
  * if defined). BDC2 and BDC3 are mainly for VMS.
  */
 #define	BDC1	'/'			/* Buffer names.		*/
-/*
- * Name:	MicroEMACS
- *		Digital ANSI terminal header file
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
 #define	GOSLING	1			/* Compile in fancy display.	*/
 #define	MEMMAP	0			/* Not memory mapped video.	*/
 
@@ -75,22 +60,6 @@
 #define	KPF2	K1C
 #define	KPF3	K1D
 #define	KPF4	K1E
-/*
- * Name:	MicroEMACS
- *		Common header file.
- * Version:	29
- * Last edit:	14-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- * 
- * This file is the general header file for all parts
- * of the MicroEMACS display editor. It contains all of the
- * general definitions and macros. It also contains some
- * conditional compilation flags. All of the per-system and
- * per-terminal definitions are in special header files.
- * The most common reason to edit this file would be to zap
- * the definition of CVMVAS or BACKUP.
- */
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<string.h>
@@ -416,20 +385,6 @@ extern	int	curmsgf;
 extern	int	newmsgf;
 extern	char	msg[];
 /*
- * Name:	MicroEMACS
- *		Character class tables.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * Do it yourself character classification
- * macros, that understand the multinational character set,
- * and let me ask some questions the standard macros (in
- * ctype.h) don't let you ask.
- */
-
-/*
  * This table, indexed by a character drawn
  * from the 256 member character set, is used by my
  * own character type macros to answer questions about the
@@ -503,20 +458,6 @@ char	cinfo[256] = {
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		0,		0
 };
-/*
- * Name:	MicroEMACS
- *		Ultrix-32 terminal I/O.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * The functions in this file
- * negotiate with the operating system for
- * keyboard characters, and write characters to
- * the display in a barely buffered fashion.
- */
-
 #include	<termios.h>
 #include	<sys/ioctl.h>
 
@@ -621,26 +562,6 @@ ttgetc()
 		;
 	return (buf[0] & 0xFF);
 }
-/*
- * Name:	MicroEMACS
- *		Digital ANSI terminal display
- * Version:	29
- * Last edit:	10-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * The SCALD display is just an ANSI display, with
- * some special hacks to kludge around the bugs, and
- * to make it a bit more friendly. The support is
- * unquestionably non-optimal. The costs are wrong; in
- * fact, display should be fixed up to understand non
- * linear cost devices like the SCALD. The BackIndex
- * sequence used in the insert line is defective in
- * the display firmware, so we set the cost high to
- * discourage its use. Perhaps the cost should be
- * set to infinity!
- */
-
 #define	SCALD	0			/* Buggy display.		*/
 
 #define	BEL	0x07			/* BEL character.		*/
@@ -962,16 +883,6 @@ ttresize()
 	nrow = newnrow;
 	ncol = newncol;
 }
-/*
- * Name:	MicroEMACS
- * 		Digital ANSI terminal keyboard.
- *		Assumes LK201, which is OK on the VT100.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
 #define	ESC	0x1B			/* Escape, arrows et al.	*/
 #define	AGRAVE	0x60			/* LK201 kludge.		*/
 
@@ -1159,19 +1070,6 @@ ttykeymapinit()
 		}
 	}
 }
-/*
- * Name:	MicroEMACS
- *		Echo line reading and writing.
- * Version:	29
- * Last edit:	14-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * Common routines for reading
- * and writing characters in the echo line area
- * of the display screen. Used by the entire
- * known universe.
- */
 #include    <stdarg.h>      /* Diviation from original sources - va_* macros */
 int	epresf	= FALSE;		/* Stuff in echo line flag.	*/
 int	nmsg	= 0;			/* Size of occupied msg. area.	*/
@@ -1616,33 +1514,6 @@ register int	c;
 		++ttcol;
 	}
 }
-/*
- * Name:	MicroEMACS
- *		Text line handling.
- * Version:	29
- * Last edit:	14-Feb-86
- * By:		rex::conroy, vox::ellison
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *				   ...!dec-vox!ellison
- *
- * The functions in this file
- * are a general set of line management
- * utilities. They are the only routines that
- * touch the text. They also touch the buffer
- * and window structures, to make sure that the
- * necessary updating gets done. There are routines
- * in this file that handle the kill buffer too.
- * It isn't here for any good reason.
- *
- * Note that this code only updates the dot and
- * mark values in the window list. Since all the code
- * acts on the current window, the buffer that we
- * are editing must be being displayed, which means
- * that "b_nwnd" is non zero, which means that the
- * dot and mark values in the buffer headers are
- * nonsense.
- */
-
 #define	NBLOCK	16			/* Line block chunk size	*/
 
 #ifndef	KBLOCK
@@ -2201,19 +2072,6 @@ kremove(n)
 		return (-1);
 	return (kbufp[n] & 0xFF);
 }
-/*
- * Name:	MicroEMACS
- *		Symbol table stuff.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * Symbol tables, and keymap setup.
- * The terminal specific parts of building the
- * keymap has been moved to a better place.
- */
-
 #define	DIRLIST	0			/* Disarmed!			*/
 
 /*
@@ -2546,15 +2404,6 @@ char		*name;
 	binding[new] = sp;
 	++sp->s_nkey;
 }
-/*
- * Name:	MicroEMACS
- *		Buffer handling.
- * Version:	30
- * Last edit:	17-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
 /*
  * Attach a buffer to a window. The
  * values of dot and mark come from the buffer
@@ -2926,15 +2775,6 @@ register BUFFER	*bp;
 	bp->b_marko = 0;
 	return (TRUE);
 }
-/*
- * Name:	MicroEMACS
- *		Window handling.
- * Version:	29
- * Last edit:	10-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
 /*
  * Reposition dot in the current
  * window to line "n". If the argument is
@@ -3343,15 +3183,6 @@ wpopup()
 	return (wp);
 }
 /*
- * Name:	MicroEMACS
- * 		File commands.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
-/*
  * Read a file into the current
  * buffer. This is really easy; all you do it
  * find the name of the file, and call the standard
@@ -3458,7 +3289,7 @@ filevisit(f, n, k)
  * Read the file "fname" into the current buffer.
  * Make all of the text in the buffer go away, after checking
  * for unsaved changes. This is called by the "read" command, the
- * "visit" command, and the mainline (for "uemacs file"). If the
+ * "visit" command, and the mainline (for "e file"). If the
  * BACKUP conditional is set, then this routine also does the read
  * end of backup processing. The BFBAK flag, if set in a buffer,
  * says that a backup should be taken. It is set when a file is
@@ -3732,20 +3563,6 @@ filename(f, n, k)
 #endif
 	return (TRUE);
 }
-/*
- * Name:	MicroEMACS
- *		Assorted commands.
- * Version:	29
- * Last edit:	10-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * The file contains the command
- * processors for a large assortment of unrelated
- * commands. The only thing they have in common is
- * that they are all command processors.
- */
-
 /*
  * Display a bunch of useful information about
  * the current location of dot. The character under the
@@ -4180,22 +3997,6 @@ yank(f, n, k)
 	return (TRUE);
 }
 /*
- * Name:	MicroEMACS
- *		Word mode commands.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * The routines in this file
- * implement commands that work word at
- * a time. There are all sorts of word mode
- * commands. If I do any sentence and/or paragraph
- * mode commands, they are likely to be put in
- * this file.
- */
-
-/*
  * Move the cursor backward by
  * "n" words. All of the details of motion
  * are performed by the "backchar" and "forwchar"
@@ -4446,22 +4247,6 @@ inword()
 	return (FALSE);
 }
 /*
- * Name:	MicroEMACS
- *		Region based commands.
- * Version:	29
- * Last edit:	12-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- * What:	Region operations.
- *
- * The routines in this file
- * deal with the region, that magic space
- * between "." and mark. Some functions are
- * commands. Some functions are just for
- * internal use.
- */
-
-/*
  * Kill the region. Ask "getregion"
  * to figure out the bounds of the region.
  * Move "." to the start, and kill the characters.
@@ -4662,21 +4447,6 @@ register long	size;
 	}
 	return (TRUE);
 }
-/*
- * Name:	MicroEMACS
- *		Basic cursor motion commands.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * The routines in this file are the basic
- * command functions for moving the cursor around on
- * the screen, setting mark, and swapping dot with
- * mark. Only moves between lines, which might make the
- * current buffer framing bad, are hard.
- */
-
 /*
  * Go to beginning of line.
  */
@@ -5023,24 +4793,6 @@ register int	n;
 	curwp->w_flag |= WFMOVE;
 	return (TRUE);
 }
-/*
- * Name:	MicroEMACS
- * 		Search commands.
- * Version:	30
- * Last edit:	14-Feb-86
- * By:		rex::conroy, rex::ellison
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *		                   ...!dec-vox!ellison
- *
- * The functions in this file implement the
- * search commands (both plain and incremental searches
- * are supported) and the query-replace command.
- *
- * The plain old search code is part of the original
- * MicroEMACS "distribution". The incremental search code,
- * and the query-replace code, is by Rich Ellison.
- */
-
 #define CCHR(x)		((x)-'@')
 
 #define SRCH_BEGIN	(0)			/* Search sub-codes.	*/
@@ -5695,15 +5447,6 @@ char	*prompt;
 	return (s);
 }
 /*
- * Name:	MicroEMACS
- *		Terminal independent keyboard handling.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
-/*
  * Read in a key, doing the terminal
  * independent prefix handling. The terminal specific
  * "getkbd" routine gets the first swing, and may return
@@ -5820,15 +5563,6 @@ register int	k;
 	strcpy(cp, np);
 }
 /*
- * Name:	MicroEMACS
- *		Extended (M-X) commands.
- * Version:	29
- * Last edit:	14-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
-/*
  * This function modifies the keyboard
  * binding table, by adjusting the entries in the
  * big "bindings" array. Most of the grief deals with the
@@ -5921,7 +5655,7 @@ help(f, n, k)
  * of the command keys and their current bindings, and stores
  * the table in the standard pop-op buffer (the one used by the
  * directory list command, the buffer list command, etc.). This
- * lets MicroEMACS produce it's own wall chart. The bindings to
+ * lets e produce it's own wall chart. The bindings to
  * "ins-self" are only displayed if there is an argument.
  */
 wallchart(f, n, k)
@@ -5955,26 +5689,6 @@ wallchart(f, n, k)
 	}
 	return (popblist());
 }
-/*
- * Name:	MicroEMACS
- *		Gosling style redisplay.
- * Version:	30
- * Last edit:	10-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * The functions in this file handle redisplay. The
- * redisplay system knows almost nothing about the editing
- * process; the editing functions do, however, set some
- * hints to eliminate a lot of the grinding. There is more
- * that can be done; the "vtputc" interface is a real
- * pig. Two conditional compilation flags; the GOSLING
- * flag enables dynamic programming redisplay, using the
- * algorithm published by Jim Gosling in SIGOA. The MEMMAP
- * changes things around for memory mapped video. With
- * both off, the terminal is a VT52.
- */
-
 /*
  * You can change these back to the types
  * implied by the name if you get tight for space. If you
@@ -6471,7 +6185,7 @@ register WINDOW	*wp;
 	else
 		vtputc(' ');
 	n  = 1;
-	cp = "MicroEMACS";			/* Buffer name.		*/
+	cp = "e";				/* Buffer name.		*/
 	while ((c = *cp++) != 0) {
 		vtputc(c);
 		++n;
@@ -6726,15 +6440,6 @@ traceback(offs, size, i, j)
 	uline(k, vscreen[k], pscreen[offs+i-1]);
 }
 #endif
-/*
- * Name:	MicroEMACS
- * 		Ultrix-32 file I/O.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
 static	FILE	*ffp;
 
 /*
@@ -6890,19 +6595,6 @@ register char	*fn;
 	}
 #endif
 }
-/*
- * Name:	MicroEMACS
- *		Spawn CLI; stop if C shell.
- * Version:	29
- * Last edit:	10-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * Spawn. New version, which
- * interracts with the job control stuff
- * in the 4.X BSD C shell.
- */
-
 #include	<signal.h>
 
 char	*shellp	= NULL;			/* Saved "SHELL" name.		*/
@@ -6914,7 +6606,7 @@ extern	char	*getenv();
  * This code does a one of 2 different
  * things, depending on what version of the shell
  * you are using. If you are using the C shell, which
- * implies that you are using job control, then MicroEMACS
+ * implies that you are using job control, then e
  * moves the cursor to a nice place and sends itself a
  * stop signal. If you are using the Bourne shell it runs
  * a subshell using fork/exec. Bound to "C-C", and used
@@ -6977,22 +6669,6 @@ spawncli(f, n, k)
 	ttopen();
 	return (TRUE);
 }
-/*
- * Name:	MicroEMACS
- *		Version stamp.
- * Version:	30
- * Last edit:	14-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- *
- * This file contains the string(s)
- * that get written out by the show version command.
- * Rich had it generated by a command file. I do
- * it manually, until I can figure out a way to get
- * the MicroEMACS version number generated in a
- * reasonable (automatic) manner. Perhaps a program
- * that reads "things2do.txt".
- */
 #ifdef HAVE_CONFIG_H
 #include	"config.h"
 #else
@@ -7000,19 +6676,10 @@ spawncli(f, n, k)
 #endif
 
 char	*version[] = {
-	"MicroEMACS version " PACKAGE_VERSION,
+	"e editor version " PACKAGE_VERSION,
 	"Source from REX::USER$A:[CONROY.HACKING.MINIEMACS]",
 	NULL
 }; 
-/*
- * Name:	MicroEMACS
- *		Mainline, macro commands.
- * Version:	29
- * Last edit:	05-Feb-86
- * By:		rex::conroy
- *		decvax!decwrl!dec-rhea!dec-rex!conroy
- */
-
 int	thisflag;			/* Flags, this command		*/
 int	lastflag;			/* Flags, last command		*/
 int	curgoal;			/* Goal column			*/

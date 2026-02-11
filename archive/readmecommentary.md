@@ -1,5 +1,0 @@
-e is emacs with less
-
-vscode replacement in terminal for all we normally are used to having in all apps like vscode and chrome not strange commands we have to learn for weeks and 1ms startup
-
-e is in c. Its e c. Easy.
