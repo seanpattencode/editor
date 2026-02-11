@@ -1,46 +1,12 @@
-/*
- * e.c - e editor, fork of MicroEMACS by Dave Conroy.
- *        https://github.com/seanpattencode/editor
- *
- * Build (parallel split — zero overhead from strict checks):
- *   make          two clang passes run simultaneously:
- *                   1) -Werror -Weverything + hardening -fsyntax-only (validate)
- *                   2) -O2 -w bare                                    (emit binary)
- *                 validation finishes inside the compile, so all checks
- *                 are free. Binary is pure -O2 with no extra codegen.
- *   make debug    all flags combined + ASan/UBSan/IntSan -O1 -g
- */
-#define	PCC	1			/* "[]" gets an error.		*/
-#define	KBLOCK	8192			/* Kill grow.			*/
-#define	GOOD	0			/* Good exit status.		*/
+#define	KBLOCK	8192
+#define	GOOD	0
 
-/*
- * Macros used by the buffer name making code.
- * Start at the end of the file name, scan to the left
- * until BDC1 (or BDC2, if defined) is reached. The buffer
- * name starts just to the right of that location, and
- * stops at end of string (or at the next BDC3 character,
- * if defined). BDC2 and BDC3 are mainly for VMS.
- */
-#define	BDC1	'/'			/* Buffer names.		*/
-#define	GOSLING	1			/* Compile in fancy display.	*/
-#define	MEMMAP	0			/* Not memory mapped video.	*/
+#define	BDC1	'/'
+#define	GOSLING	1
 
-/*
- * Yes Bob, it's wrong for you.
- */
-#define	NROW	66			/* Rows.			*/
-#define	NCOL	132			/* Columns.			*/
+#define	NROW	66
+#define	NCOL	132
 
-/*
- * Special keys, as on the LK201, which is
- * a superset of the VT100. Originally I tried to keep the
- * numbers in LK201 escape sequence code, but it became too much
- * of a pain because of the keycodes greater than 31. 
- * The codes are all just redefinitions for the standard extra
- * key codes. Using the standard names ensures that the
- * LK201 codes land in the right place.
- */
 #define	KUP	K01
 #define	KDOWN	K02
 #define	KLEFT	K03
@@ -78,105 +44,66 @@
 #include	<unistd.h>
 #include	<sys/wait.h>
 static int dirmode;
-static int sb_top, sb_bot;  /* scrollbar thumb top/bottom rows */
+static int sb_top, sb_bot;
 static int uc[4096],ut,ul,hoff;
 
-#define	CVMVAS	1			/* C-V, M-V work in pages.	*/
-#define	BACKUP	0			/* Make backup file.		*/
+#define	CVMVAS	1
 
-/*
- * Table sizes, etc.
- */
-#define	NSHASH	31			/* Symbol table hash size.	*/
-#define	NFILEN	80			/* Length, file name.		*/
-#define	NBUFN	16			/* Length, buffer name.		*/
-#define	NLINE	256			/* Length, line.		*/
-#define	NKBDM	256			/* Length, keyboard macro.	*/
-#define NMSG	512			/* Length, message buffer.	*/
-#define	NPAT	80			/* Length, pattern.		*/
-#define	HUGE	1000			/* A rather large number.	*/
-#define NSRCH	128			/* Undoable search commands.	*/
-#define	NXNAME	64			/* Length, extended command.	*/
+#define	NSHASH	31
+#define	NFILEN	80
+#define	NBUFN	16
+#define	NLINE	256
+#define	NKBDM	256
+#define NMSG	512
+#define	NPAT	80
+#define	HUGE	1000
+#define NSRCH	128
+#define	NXNAME	64
 
-/*
- * Universal.
- */
-#define	FALSE	0			/* False, no, bad, etc.		*/
-#define	TRUE	1			/* True, yes, good, etc.	*/
-#define	ABORT	2			/* Death, ^G, abort, etc.	*/
+#define	FALSE	0
+#define	TRUE	1
+#define	ABORT	2
 
-/*
- * These flag bits keep track of
- * some aspects of the last command. The CFCPCN
- * flag controls goal column setting. The CFKILL
- * flag controls the clearing versus appending
- * of data in the kill buffer.
- */
-#define	CFCPCN	0x0001			/* Last command was C-P, C-N	*/
-#define	CFKILL	0x0002			/* Last command was a kill	*/
+#define	CFCPCN	0x0001
+#define	CFKILL	0x0002
 
-/*
- * File I/O.
- */
-#define	FIOSUC	0			/* Success.			*/
-#define	FIOFNF	1			/* File not found.		*/
-#define	FIOEOF	2			/* End of file.			*/
-#define	FIOERR	3			/* Error.			*/
+#define	FIOSUC	0
+#define	FIOFNF	1
+#define	FIOEOF	2
+#define	FIOERR	3
 
-/*
- * Directory I/O.
- */
-#define	DIOSUC	0			/* Success.			*/
-#define	DIOEOF	1			/* End of file.			*/
-#define	DIOERR	2			/* Error.			*/
+#define	DIOSUC	0
+#define	DIOEOF	1
+#define	DIOERR	2
 
-/*
- * Display colors.
- */
-#define	CNONE	0			/* Unknown color.		*/
-#define	CTEXT	1			/* Text color.			*/
-#define	CMODE	2			/* Mode line color.		*/
+#define	CNONE	0
+#define	CTEXT	1
+#define	CMODE	2
 
-/*
- * Flags for "eread".
- */
-#define	EFNEW	0x0001			/* New prompt.			*/
-#define	EFAUTO	0x0002			/* Autocompletion enabled.	*/
-#define	EFCR	0x0004			/* Echo CR at end; last read.	*/
+#define	EFNEW	0x0001
+#define	EFAUTO	0x0002
+#define	EFCR	0x0004
 
-/*
- * Keys are represented inside using an 11 bit
- * keyboard code. The transformation between the keys on
- * the keyboard and 11 bit code is done by terminal specific
- * code in the "kbd.c" file. The actual character is stored
- * in 8 bits (DEC multinationals work); there is also a control
- * flag KCTRL, a meta flag KMETA, and a control-X flag KCTLX.
- * ASCII control characters are always represented using the
- * KCTRL form. Although the C0 control set is free, it is
- * reserved for C0 controls because it makes the communication
- * between "getkey" and "getkbd" easier. The funny keys get
- * mapped into the C1 control area.
- */
-#define	NKEYS	2048			/* 11 bit code.			*/
+#define	NKEYS	2048
 
-#define	METACH	0x1B			/* M- prefix,   Control-[, ESC	*/
-#define	CTMECH	0x1C			/* C-M- prefix, Control-\	*/
-#define	EXITCH	0x1D			/* Exit level,  Control-]	*/
-#define	CTRLCH	0x1E			/* C- prefix,	Control-^	*/
-#define	HELPCH	0x1F			/* Help key,    Control-_	*/
+#define	METACH	0x1B
+#define	CTMECH	0x1C
+#define	EXITCH	0x1D
+#define	CTRLCH	0x1E
+#define	HELPCH	0x1F
 
-#define	KCHAR	0x00FF			/* The basic character code.	*/
-#define	KCTRL	0x0100			/* Control flag.		*/
-#define	KMETA	0x0200			/* Meta flag.			*/
-#define	KCTLX	0x0400			/* Control-X flag.		*/
+#define	KCHAR	0x00FF
+#define	KCTRL	0x0100
+#define	KMETA	0x0200
+#define	KCTLX	0x0400
 
-#define	KFIRST	0x0080			/* First special.		*/
-#define	KLAST	0x009F			/* Last special.		*/
+#define	KFIRST	0x0080
+#define	KLAST	0x009F
 
-#define	KRANDOM	0x0080			/* A "no key" code.		*/
-#define	K01	0x0081			/* Use these names to define	*/
-#define	K02	0x0082			/* the special keys on your	*/
-#define	K03	0x0083			/* terminal.			*/
+#define	KRANDOM	0x0080
+#define	K01	0x0081
+#define	K02	0x0082
+#define	K03	0x0083
 #define	K04	0x0084
 #define	K05	0x0085
 #define	K06	0x0086
@@ -206,16 +133,10 @@ static int uc[4096],ut,ul,hoff;
 #define	K1E	0x009E
 #define	K1F	0x009F
 
-/*
- * These flags, and the macros below them,
- * make up a do-it-yourself set of "ctype" macros that
- * understand the DEC multinational set, and let me ask
- * a slightly different set of questions.
- */
-#define	_W	0x01			/* Word.			*/
-#define	_U	0x02			/* Upper case letter.		*/
-#define	_L	0x04			/* Lower case letter.		*/
-#define	_C	0x08			/* Control.			*/
+#define	_W	0x01
+#define	_U	0x02
+#define	_L	0x04
+#define	_C	0x08
 
 #define	ISWORD(c)	((cinfo[(unsigned char)(c)]&_W)!=0)
 #define	ISCTRL(c)	((cinfo[(unsigned char)(c)]&_C)!=0)
@@ -224,143 +145,69 @@ static int uc[4096],ut,ul,hoff;
 #define	TOUPPER(c)	((c)-0x20)
 #define	TOLOWER(c)	((c)+0x20)
 
-/*
- * The symbol table links editing functions
- * to names. Entries in the key map point at the symbol
- * table entry. A reference count is kept, but it is
- * probably next to useless right now. The old type code,
- * which was not being used and probably not right
- * anyway, is all gone.
- */
 typedef	struct	SYMBOL {
-	struct	SYMBOL *s_symp;		/* Hash chain.			*/
-	short	s_nkey;			/* Count of keys bound here.	*/
-	char	*s_name;		/* Name.			*/
-	int	(*s_funcp)(int, int, int);		/* Function.			*/
+	struct	SYMBOL *s_symp;
+	short	s_nkey;
+	char	*s_name;
+	int	(*s_funcp)(int, int, int);
 }	SYMBOL;
 
-/*
- * There is a window structure allocated for
- * every active display window. The windows are kept in a
- * big list, in top to bottom screen order, with the listhead at
- * "wheadp". Each window contains its own values of dot and mark.
- * The flag field contains some bits that are set by commands
- * to guide redisplay; although this is a bit of a compromise in
- * terms of decoupling, the full blown redisplay is just too
- * expensive to run for every input character. 
- */
 typedef	struct	WINDOW {
-	struct	WINDOW *w_wndp;		/* Next window			*/
-	struct	BUFFER *w_bufp;		/* Buffer displayed in window	*/
-	struct	LINE *w_linep;		/* Top line in the window	*/
-	struct	LINE *w_dotp;		/* Line containing "."		*/
-	short	w_doto;			/* Byte offset for "."		*/
-	struct	LINE *w_markp;		/* Line containing "mark"	*/
-	short	w_marko;		/* Byte offset for "mark"	*/
-	char	w_toprow;		/* Origin 0 top row of window	*/
-	char	w_ntrows;		/* # of rows of text in window	*/
-	char	w_force;		/* If NZ, forcing row.		*/
-	char	w_flag;			/* Flags.			*/
+	struct	WINDOW *w_wndp;
+	struct	BUFFER *w_bufp;
+	struct	LINE *w_linep;
+	struct	LINE *w_dotp;
+	short	w_doto;
+	struct	LINE *w_markp;
+	short	w_marko;
+	char	w_toprow;
+	char	w_ntrows;
+	char	w_force;
+	char	w_flag;
 }	WINDOW;
 
-/*
- * Window flags are set by command processors to
- * tell the display system what has happened to the buffer
- * mapped by the window. Setting "WFHARD" is always a safe thing
- * to do, but it may do more work than is necessary. Always try
- * to set the simplest action that achieves the required update.
- * Because commands set bits in the "w_flag", update will see
- * all change flags, and do the most general one.
- */
-#define	WFFORCE	0x01			/* Force reframe.		*/
-#define	WFMOVE	0x02			/* Movement from line to line.	*/
-#define	WFEDIT	0x04			/* Editing within a line.	*/
-#define	WFHARD	0x08			/* Better to a full display.	*/
-#define	WFMODE	0x10			/* Update mode line.		*/
+#define	WFFORCE	0x01
+#define	WFMOVE	0x02
+#define	WFEDIT	0x04
+#define	WFHARD	0x08
+#define	WFMODE	0x10
 
-/*
- * Text is kept in buffers. A buffer header, described
- * below, exists for every buffer in the system. The buffers are
- * kept in a big list, so that commands that search for a buffer by
- * name can find the buffer header. There is a safe store for the
- * dot and mark in the header, but this is only valid if the buffer
- * is not being displayed (that is, if "b_nwnd" is 0). The text for
- * the buffer is kept in a circularly linked list of lines, with
- * a pointer to the header line in "b_linep".
- */
 typedef	struct	BUFFER {
-	struct	BUFFER *b_bufp;		/* Link to next BUFFER		*/
-	struct	LINE *b_dotp;		/* Link to "." LINE structure	*/
-	short	b_doto;			/* Offset of "." in above LINE	*/
-	struct	LINE *b_markp;		/* The same as the above two,	*/
-	short	b_marko;		/* but for the "mark"		*/
-	struct	LINE *b_linep;		/* Link to the header LINE	*/
-	char	b_nwnd;			/* Count of windows on buffer	*/
-	char	b_flag;			/* Flags			*/
-	char	b_fname[NFILEN];	/* File name			*/
-	char	b_bname[NBUFN];		/* Buffer name			*/
+	struct	BUFFER *b_bufp;
+	struct	LINE *b_dotp;
+	short	b_doto;
+	struct	LINE *b_markp;
+	short	b_marko;
+	struct	LINE *b_linep;
+	char	b_nwnd;
+	char	b_flag;
+	char	b_fname[NFILEN];
+	char	b_bname[NBUFN];
 }	BUFFER;
 
-#define	BFCHG	0x01			/* Changed.			*/
-#define	BFBAK	0x02			/* Need to make a backup.	*/
+#define	BFCHG	0x01
+#define	BFBAK	0x02
 
-/*
- * This structure holds the starting position
- * (as a line/offset pair) and the number of characters in a
- * region of a buffer. This makes passing the specification
- * of a region around a little bit easier.
- * There have been some complaints that the short in this
- * structure is wrong; that a long would be more appropriate.
- * I'll awat more comments from the folks with the little
- * machines; I have a VAX, and everything fits.
- */
 typedef	struct	{
-	struct	LINE *r_linep;		/* Origin LINE address.		*/
-	short	r_offset;		/* Origin LINE offset.		*/
-	short	r_size;			/* Length in characters.	*/
+	struct	LINE *r_linep;
+	short	r_offset;
+	short	r_size;
 }	REGION;
 
-/*
- * All text is kept in circularly linked
- * lists of "LINE" structures. These begin at the
- * header line (which is the blank line beyond the
- * end of the buffer). This line is pointed to by
- * the "BUFFER". Each line contains a the number of
- * bytes in the line (the "used" size), the size
- * of the text array, and the text. The end of line
- * is not stored as a byte; it's implied. Future
- * additions will include update hints, and a
- * list of marks into the line.
- */
 typedef	struct	LINE {
-	struct	LINE *l_fp;		/* Link to the next line	*/
-	struct	LINE *l_bp;		/* Link to the previous line	*/
-	short	l_size;			/* Allocated size		*/
-	short	l_used;			/* Used size			*/
-#if	PCC
-	char	l_text[1];		/* A bunch of characters.	*/
-#else
-	char	l_text[];		/* A bunch of characters.	*/
-#endif
+	struct	LINE *l_fp;
+	struct	LINE *l_bp;
+	short	l_size;
+	short	l_used;
+	char	l_text[1];
 }	LINE;
 
-/*
- * The rationale behind these macros is that you
- * could (with some editing, like changing the type of a line
- * link from a "LINE *" to a "REFLINE", and fixing the commands
- * like file reading that break the rules) change the actual
- * storage representation of lines to use something fancy on
- * machines with small address spaces.
- */
 #define	lforw(lp)	((lp)->l_fp)
 #define	lback(lp)	((lp)->l_bp)
 #define	lgetc(lp, n)	((lp)->l_text[(n)]&0xFF)
 #define	lputc(lp, n, c)	((lp)->l_text[(n)]=(c))
 #define	llength(lp)	((lp)->l_used)
 
-/*
- * Externals.
- */
 extern	int	thisflag;
 extern	int	lastflag;
 extern	int	curgoal;
@@ -377,7 +224,7 @@ extern	short	*kbdmop;
 extern	char	pat[];
 extern	SYMBOL	*symbol[];
 extern	SYMBOL	*binding[];
-/* Forward declarations — helpers called before definition */
+
 static void	ttflush(void);
 static void	ttputc(int);
 static void	asciiparm(int);
@@ -476,76 +323,69 @@ extern	int	nmsg;
 extern	int	curmsgf;
 extern	int	newmsgf;
 extern	char	msg[];
-/*
- * This table, indexed by a character drawn
- * from the 256 member character set, is used by my
- * own character type macros to answer questions about the
- * type of a character. It handles the full multinational
- * character set, and lets me ask some questions that the
- * standard "ctype" macros cannot ask.
- */
+
 char	cinfo[256] = {
-	_C,		_C,		_C,		_C,	/* 0x0X	*/
 	_C,		_C,		_C,		_C,
 	_C,		_C,		_C,		_C,
 	_C,		_C,		_C,		_C,
-	_C,		_C,		_C,		_C,	/* 0x1X	*/
 	_C,		_C,		_C,		_C,
 	_C,		_C,		_C,		_C,
 	_C,		_C,		_C,		_C,
-	0,		0,		0,		0,	/* 0x2X	*/
+	_C,		_C,		_C,		_C,
+	_C,		_C,		_C,		_C,
+	0,		0,		0,		0,
 	_W,		0,		0,		_W,
 	0,		0,		0,		0,
 	0,		0,		0,		0,
-	_W,		_W,		_W,		_W,	/* 0x3X	*/
+	_W,		_W,		_W,		_W,
 	_W,		_W,		_W,		_W,
 	_W,		_W,		0,		0,
 	0,		0,		0,		0,
-	0,		_U|_W,		_U|_W,		_U|_W,	/* 0x4X	*/
+	0,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
-	_U|_W,		_U|_W,		_U|_W,		_U|_W,	/* 0x5X	*/
+	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		0,
 	0,		0,		0,		_W,
-	0,		_L|_W,		_L|_W,		_L|_W,	/* 0x6X	*/
+	0,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
-	_L|_W,		_L|_W,		_L|_W,		_L|_W,	/* 0x7X	*/
+	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		0,
 	0,		0,		0,		_C,
-	0,		0,		0,		0,	/* 0x8X	*/
 	0,		0,		0,		0,
 	0,		0,		0,		0,
 	0,		0,		0,		0,
-	0,		0,		0,		0,	/* 0x9X	*/
 	0,		0,		0,		0,
 	0,		0,		0,		0,
 	0,		0,		0,		0,
-	0,		0,		0,		0,	/* 0xAX	*/
 	0,		0,		0,		0,
 	0,		0,		0,		0,
 	0,		0,		0,		0,
-	0,		0,		0,		0,	/* 0xBX	*/
 	0,		0,		0,		0,
 	0,		0,		0,		0,
 	0,		0,		0,		0,
-	_U|_W,		_U|_W,		_U|_W,		_U|_W,	/* 0xCX	*/
+	0,		0,		0,		0,
+	0,		0,		0,		0,
+	0,		0,		0,		0,
+	0,		0,		0,		0,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
-	0,		_U|_W,		_U|_W,		_U|_W,	/* 0xDX	*/
+	_U|_W,		_U|_W,		_U|_W,		_U|_W,
+	0,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		_U|_W,		_U|_W,
 	_U|_W,		_U|_W,		0,		_W,
-	_L|_W,		_L|_W,		_L|_W,		_L|_W,	/* 0xEX	*/
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
-	0,		_L|_W,		_L|_W,		_L|_W,	/* 0xFX	*/
+	_L|_W,		_L|_W,		_L|_W,		_L|_W,
+	0,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		_L|_W,		_L|_W,
 	_L|_W,		_L|_W,		0,		0
@@ -553,30 +393,22 @@ char	cinfo[256] = {
 #include	<termios.h>
 #include	<sys/ioctl.h>
 
-#define	NOBUF	512			/* Output buffer size.		*/
+#define	NOBUF	512
 
-static char	obuf[NOBUF];			/* Output buffer.		*/
+static char	obuf[NOBUF];
 static int	nobuf;
-static struct	termios	oldtty;			/* POSIX tty settings. */
+static struct	termios	oldtty;
 static struct	termios	newtty;
-int	nrow;				/* Terminal size, rows.		*/
-int	ncol;				/* Terminal size, columns.	*/
+int	nrow;
+int	ncol;
 
-/*
- * This function gets called once, to set up
- * the terminal channel. On Ultrix is's tricky, since
- * we want flow control, but we don't want any characters
- * stolen to send signals. Use CBREAK mode, and set all
- * characters but start and stop to 0xFF.
- */
 static void
 ttopen(void)
 {
 	struct winsize ws;
 
-	/* Adjust output channel */
-	tcgetattr(1, &oldtty);			/* save old state */
-	newtty = oldtty;			/* get base of new state */
+	tcgetattr(1, &oldtty);
+	newtty = oldtty;
 
 #ifdef __sun
 	newtty.c_iflag &= ~(IMAXBEL|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
@@ -590,7 +422,6 @@ ttopen(void)
 
 	tcsetattr(1, TCSADRAIN, &newtty); tcflush(0, TCIFLUSH);
 
-	/* Get terminal size via ioctl (fast) instead of escape sequence query */
 	if (ioctl(0, TIOCGWINSZ, &ws) == 0 && ws.ws_row && ws.ws_col) {
 		nrow = ws.ws_row;
 		ncol = ws.ws_col;
@@ -604,15 +435,9 @@ ttopen(void)
 	if (ncol > NCOL)
 		ncol = NCOL;
 
-	/* Enable mouse tracking */
 	write(1, "\033[?1006h\033[?1002h", 16);
 }
 
-/*
- * This function gets called just
- * before we go back home to the shell. Put all of
- * the terminal parameters back.
- */
 static void
 ttclose(void)
 {
@@ -620,11 +445,6 @@ ttclose(void)
 	tcsetattr(1, TCSADRAIN, &oldtty);
 }
 
-/*
- * Write character to the display.
- * Characters are buffered up, to make things
- * a little bit more efficient.
- */
 static void
 ttputc(int c)
 {
@@ -633,9 +453,6 @@ ttputc(int c)
 	obuf[nobuf++] = c;
 }
 
-/*
- * Flush output.
- */
 static void
 ttflush(void)
 {
@@ -645,11 +462,6 @@ ttflush(void)
 	}
 }
 
-/*
- * Read character from terminal.
- * All 8 bits are returned, so that you can use
- * a multi-national terminal.
- */
 static int
 ttgetc(void)
 {
@@ -659,11 +471,10 @@ ttgetc(void)
 		;
 	return (buf[0] & 0xFF);
 }
-#define	SCALD	0			/* Buggy display.		*/
 
-#define	BEL	0x07			/* BEL character.		*/
-#define	ESC	0x1B			/* ESC character.		*/
-#define	LF	0x0A			/* Line feed.			*/
+#define	BEL	0x07
+#define	ESC	0x1B
+#define	LF	0x0A
 
 extern	int	ttrow;
 extern	int	ttcol;
@@ -671,65 +482,20 @@ extern	int	tttop;
 extern	int	ttbot;
 extern	int	tthue;
 
-#if	SCALD
-
-int	tceeol	=	3;		/* Costs, SCALDstation.		*/
-int	tcinsl	= 	100;
-int	tcdell	=	100;
-
-#else
-
-int	tceeol	=	3;		/* Costs, ANSI display.		*/
+int	tceeol	=	3;
 int	tcinsl	= 	17;
 int	tcdell	=	16;
 
-#endif
-
-/*
- * Initialize the terminal when the editor
- * gets started up. This is a no-op on the ANSI
- * display. On the SCALD display, it turns off the
- * half-screen scroll, because this appears to really
- * confuse the scrolling region firmware in the
- * display.
- */
 static void
 ttinit(void)
 {
-#if	SCALD
-	ttputc(ESC);			/* Cancel jump interval.	*/
-	ttputc('[');
-	asciiparm(1);
-	ttputc('j');
-#endif
 }
 
-/*
- * Clean up the terminal, in anticipation of
- * a return to the command interpreter. This is a no-op
- * on the ANSI display. On the SCALD display, it sets the
- * window back to half screen scrolling. Perhaps it should
- * query the display for the increment, and put it
- * back to what it was.
- */
 static void
 tttidy(void)
 {
-#if	SCALD
-	ttputc(ESC);			/* Half screen.			*/
-	ttputc('[');
-	asciiparm(nrow/2);
-	ttputc('j');
-#endif
 }
 
-/*
- * Move the cursor to the specified
- * origin 0 row and column position. Try to
- * optimize out extra moves; redisplay may
- * have left the cursor in the right
- * location last time!
- */
 static void
 ttmove(int row, int col)
 {
@@ -745,9 +511,6 @@ ttmove(int row, int col)
 	}
 }
 
-/*
- * Erase to end of line.
- */
 static void
 tteeol(void)
 {
@@ -756,9 +519,6 @@ tteeol(void)
 	ttputc('K');
 }
 
-/*
- * Erase to end of page.
- */
 static void
 tteeop(void)
 {
@@ -767,9 +527,6 @@ tteeop(void)
 	ttputc('J');
 }
 
-/*
- * Make a noise.
- */
 static void
 ttbeep(void)
 {
@@ -777,11 +534,6 @@ ttbeep(void)
 	ttflush();
 }
 
-/*
- * Convert a number to decimal
- * ascii, and write it out. Used to
- * deal with numeric arguments.
- */
 static void
 asciiparm(int n)
 {
@@ -793,77 +545,40 @@ asciiparm(int n)
 	ttputc((n%10) + '0');
 }
 
-/*
- * Insert a block of blank lines onto the
- * screen, using a scrolling region that starts at row
- * "row" and extends down to row "bot". Deal with the one
- * line case, which is a little bit special, with special
- * case code. Put all of the back index commands out
- * in a block. The SCALDstation loses the position
- * of the cursor.
- */
 static void
 ttinsl(int row, int bot, int nchunk)
 {
-	if (row == bot) {			/* Funny case.		*/
+	if (row == bot) {
 		if (nchunk != 1)
 			abort();
 		ttmove(row, 0);
 		tteeol();
-	} else {				/* General case.	*/
+	} else {
 		ttwindow(row, bot);
 		ttmove(row, 0);
 		while (nchunk--) {
-			ttputc(ESC);		/* Back index.		*/
+			ttputc(ESC);
 			ttputc('M');
 		}
-#if	SCALD
-		ttrow = HUGE;
-		ttcol = HUGE;
-#endif
 	}
 }
 
-/*
- * Delete a block of lines, with the uppermost
- * line at row "row", in a screen slice that extends to
- * row "bot". The "nchunk" is the number of lines that have
- * to be deleted. Watch for the pathalogical 1 line case,
- * where the scroll region is *not* the way to do it.
- * The block delete is used by the slightly more
- * optimal display code.
- */
 static void
 ttdell(int row, int bot, int nchunk)
 {
-	if (row == bot) {			/* Funny case.		*/
+	if (row == bot) {
 		if (nchunk != 1)
 			abort();
 		ttmove(row, 0);
 		tteeol();
-	} else {				/* General case.	*/
+	} else {
 		ttwindow(row, bot);
 		ttmove(bot, 0);
 		while (nchunk--)
 			ttputc(LF);
-#if	SCALD
-		ttrow = HUGE;
-		ttcol = HUGE;
-#endif
 	}
 }
 
-/*
- * This routine sets the scrolling window
- * on the display to go from line "top" to line
- * "bot" (origin 0, inclusive). The caller checks
- * for the pathalogical 1 line scroll window that
- * doesn't work right, and avoids it. The "ttrow"
- * and "ttcol" variables are set to a crazy value
- * to ensure that the next call to "ttmove" does
- * not turn into a no-op (the window adjustment
- * moves the cursor).
- */
 static void
 ttwindow(int top, int bot)
 {
@@ -874,25 +589,13 @@ ttwindow(int top, int bot)
 		ttputc(';');
 		asciiparm(bot+1);
 		ttputc('r');
-		ttrow = HUGE;			/* Unknown.		*/
+		ttrow = HUGE;
 		ttcol = HUGE;
-		tttop = top;			/* Remember region.	*/
+		tttop = top;
 		ttbot = bot;
 	}
 }
 
-/*
- * Switch to full screen scroll. This is
- * used by "spawn.c" just before is suspends the
- * editor, and by "display.c" when it is getting ready
- * to exit. This function gets to full screen scroll
- * by sending a DECSTBM with default parameters, but
- * I think that this is wrong. The SRM seems to say
- * that the default for Pb is 24, not the size of the
- * screen, which seems really dumb. Do I really have
- * to read the size of the screen as in "ttresize"
- * to do this right?
- */
 static void
 ttnowindow(void)
 {
@@ -900,54 +603,32 @@ ttnowindow(void)
 	ttputc('[');
 	ttputc(';');
 	ttputc('r');
-	ttrow = HUGE;				/* Unknown.		*/
+	ttrow = HUGE;
 	ttcol = HUGE;
-	tttop = HUGE;				/* No scroll region.	*/
+	tttop = HUGE;
 	ttbot = HUGE;
 }
 
-/*
- * Set the current writing color to the
- * specified color. Watch for color changes that are
- * not going to do anything (the color is already right)
- * and don't send anything to the display.
- * The rainbow version does this in putline.s on a
- * line by line basis, so don't bother sending
- * out the color shift.
- */
 static void
 ttcolor(int color)
 {
 	if (color != tthue) {
-/*
-if	!RAINBOW
-*/
-		if (color == CTEXT) {		/* Normal video.	*/
+
+		if (color == CTEXT) {
 			ttputc(ESC);
 			ttputc('[');
 			ttputc('m');
-		} else if (color == CMODE) {	/* Reverse video.	*/
+		} else if (color == CMODE) {
 			ttputc(ESC);
 			ttputc('[');
 			ttputc('7');
 			ttputc('m');
 		}
-/*
-endif
-*/
-		tthue = color;			/* Save the color.	*/
+
+		tthue = color;
 	}
 }
 
-/*
- * This routine is called by the
- * "refresh the screen" command to try and resize
- * the display. The new size, which must be deadstopped
- * to not exceed the NROW and NCOL limits, it stored
- * back into "nrow" and "ncol". Display can always deal
- * with a screen NROW by NCOL. Look in "window.c" to
- * see how the caller deals with a change.
- */
 static void
 ttresize(void)
 {
@@ -955,15 +636,15 @@ ttresize(void)
 	register int	newnrow;
 	register int	newncol;
 
-	ttputc(ESC);				/* Off the end of the	*/
-	ttputc('[');				/* world. The terminal	*/
-	asciiparm(HUGE);			/* will chop it.	*/
+	ttputc(ESC);
+	ttputc('[');
+	asciiparm(HUGE);
 	ttputc(';');
 	asciiparm(HUGE);
 	ttputc('H');
-	ttrow = HUGE;				/* Unknown.		*/
+	ttrow = HUGE;
 	ttcol = HUGE;
-	ttputc(ESC);				/* Report position.	*/
+	ttputc(ESC);
 	ttputc('[');
 	ttputc('6');
 	ttputc('n');
@@ -980,7 +661,7 @@ ttresize(void)
 		newncol = 10*newncol + c - '0';
 	if (c != 'R')
 		return;
-	if (newnrow < 1)			/* Check limits.	*/
+	if (newnrow < 1)
 		newnrow = 1;
 	else if (newnrow > NROW)
 		newnrow = NROW;
@@ -991,17 +672,8 @@ ttresize(void)
 	nrow = newnrow;
 	ncol = newncol;
 }
-#define	AGRAVE	0x60			/* LK201 kludge.		*/
+#define	AGRAVE	0x60
 
-/*
- * The special keys on an LK201 send back
- * escape sequences of the general form <ESC>[nnn~, where
- * nnn is a key code number. This table is indexed by the
- * nnn code to get the key code, which is used in the
- * binding table. The F4 key, and the F6 through F14 keys
- * have key codes. Also F17 through F20. Think of
- * help and do as special.
- */
 static short	lk201map[] = {
 	KRANDOM,	KFIND,		KINSERT,	KREMOVE,
 	KSELECT,	KPREV,		KNEXT,		KRANDOM,
@@ -1014,11 +686,6 @@ static short	lk201map[] = {
 	KF18,		KF19,		KF20
 };
 
-/*
- * Names for the keys with basic keycode
- * between KFIRST and KLAST (inclusive). This is used by
- * the key name routine in "kbd.c".
- */
 char	*keystrings[] = {
 	NULL,		"Up",		"Down",		"Left",
 	"Right",	"Find",		"Insert",	"Remove",
@@ -1030,13 +697,6 @@ char	*keystrings[] = {
 	"PF2",		"PF3",		"PF4",		NULL
 };
 
-/*
- * Read in a key, doing the low level mapping
- * of ASCII code to 11 bit code. This level deals with
- * mapping the special keys into their spots in the C1
- * control area. The C0 controls go right through, and
- * get remapped by "getkey".
- */
 static int
 getkbd(void)
 {
@@ -1044,13 +704,13 @@ getkbd(void)
 	register int	n;
 loop:
 	c = ttgetc();
-	if (c == AGRAVE)			/* On LK201, grave is	*/
-		c = METACH;			/* also META.		*/
+	if (c == AGRAVE)
+		c = METACH;
 	if (c == ESC) {
 		c = ttgetc();
 		if (c == '[') {
 			c = ttgetc();
-			if (c == '<') { /* SGR mouse: \e[<btn;x;yM or m */
+			if (c == '<') {
 				int b=0,x=0,y=0,ch,row; LINE *lp;
 				while((ch=ttgetc())!=';') b=b*10+ch-'0';
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
@@ -1084,7 +744,7 @@ loop:
 				return (KRIGHT);
 			if (c == 'D')
 				return (KLEFT);
-			if (c>='0' && c<='9') {	/* LK201 functions.	*/
+			if (c>='0' && c<='9') {
 				n = 0;
 				do {
 					n = 10*n + c - '0';
@@ -1099,7 +759,7 @@ loop:
 			}
 			goto loop;
 		}
-		if (c == 'O') {	
+		if (c == 'O') {
 			c = ttgetc();
 			if (c == 'A')
 				return (KUP);
@@ -1119,8 +779,8 @@ loop:
 				return (KPF4);
 			goto loop;
 		}
-		if (ISLOWER(c) != FALSE)	/* Copy the standard	*/
-			c = TOUPPER(c);		/* META code.		*/
+		if (ISLOWER(c) != FALSE)
+			c = TOUPPER(c);
 		if (c>=0x00 && c<=0x1F)
 			c = KCTRL | (c+'@');
 		return (KMETA | c);
@@ -1128,14 +788,6 @@ loop:
 	return (c);
 }
 
-/*
- * Terminal specific keymap initialization.
- * Attach the special keys to the appropriate built
- * in functions. Bind all of the assigned graphics in the
- * DEC supplimental character set to "ins-self".
- * As is the case of all the keymap routines, errors
- * are very fatal.
- */
 static void
 ttykeymapinit(void)
 {
@@ -1159,13 +811,6 @@ ttykeymapinit(void)
 	keydup(KRIGHT,	"forw-char");
 	keydup(KLEFT,	"back-char");
 
-	/*
-	 * Bind all GR positions that correspond
-	 * to assigned characters in the Digital multinational
-	 * character set to "ins-self". These characters may
-	 * be used just like any other character.
-	 */
-
 	if ((sp=symlookup("ins-self")) == NULL)
 		abort();
 	for (i=0xA0; i<0xFF; ++i) {
@@ -1179,51 +824,28 @@ ttykeymapinit(void)
 		}
 	}
 }
-#include    <stdarg.h>      /* Diviation from original sources - va_* macros */
-int	epresf	= FALSE;		/* Stuff in echo line flag.	*/
-int	nmsg	= 0;			/* Size of occupied msg. area.	*/
-int	curmsgf	= FALSE;		/* Current alert state.		*/
-int	newmsgf	= FALSE;		/* New alert state.		*/
+#include    <stdarg.h>
+int	epresf	= FALSE;
+int	nmsg	= 0;
+int	curmsgf	= FALSE;
+int	newmsgf	= FALSE;
 
-char	msg[NMSG];			/* Random message storage.	*/
+char	msg[NMSG];
 
-/*
- * Send a string to the message system.
- * Add a free newline to the end of the message string.
- * Return TRUE if it fits, and FALSE if it does not.
- * Perhaps the message buffer should know how to get
- * larger, just like the kill buffer?
- */
 static int
 writemsg(char * sp)
 {
 	register int	c;
 
-	if ((int)(nmsg+strlen(sp)+1) > NMSG)		/* "+1" for the "\n".	*/
+	if ((int)(nmsg+strlen(sp)+1) > NMSG)
 		return (FALSE);
 	while ((c = *sp++) != '\0')
 		msg[nmsg++] = c;
 	msg[nmsg++] = '\n';
-	newmsgf = TRUE;				/* Update mode line.	*/
+	newmsgf = TRUE;
 	return (TRUE);
 }
 
-/*
- * Read messages. The message lines are
- * displayed, one line at a time, in the message line.
- * A special sub-mode is entered, in which the keys have
- * the following meanings:
- *	^P	Go backward 1 line.
- *	BS	Go backward 1 line.
- *	^N	Go forward 1 line. Quit if at the end.
- *	SP	Go forward 1 line. Quit if at the end.
- *	CR	Go forward 1 line. Quit if at the end.
- *	^G	Abort, leave old text.
- *	^C	Quit, delete anything already read.
- * Return TRUE if you left this mode in a reasonable
- * way (not ^G), and ABORT if you quit the mode with a
- * ^G.
- */
 static int
 readmsg(int f, int n, int k)
 {
@@ -1231,66 +853,63 @@ readmsg(int f, int n, int k)
 	register int	i;
 	register int	j;
 
-	if (nmsg == 0)				/* Duck out if none.	*/
+	if (nmsg == 0)
 		return (TRUE);
-	newmsgf = FALSE;			/* Kill alert, and do	*/
-	update();				/* a redisplay.		*/
+	newmsgf = FALSE;
+	update();
 	ttcolor(CTEXT);
 	i = 0;
 	while (i < nmsg) {
-		ttmove(nrow-1, 0);		/* Display 1 line.	*/
+		ttmove(nrow-1, 0);
 		while (i<nmsg && (c=msg[i++])!='\n')
 			eputc(c);
 		tteeol();
-		ttmove(nrow-1, 0);		/* Looks nice.		*/
+		ttmove(nrow-1, 0);
 		ttflush();
-		for (;;) {			/* Editing loop.	*/
+		for (;;) {
 			c = ttgetc();
 			switch (c) {
-			case 0x0E:		/* ^N			*/
-			case 0x20:		/* SP			*/
-			case 0x0D:		/* CR			*/
+			case 0x0E:
+			case 0x20:
+			case 0x0D:
 				break;
 
-			case 0x10:		/* ^P			*/
-			case 0x08:		/* BS			*/
+			case 0x10:
+			case 0x08:
 				do {
 					--i;
 				} while (i!=0 && msg[i-1]!='\n');
 				if (i != 0) {
-					do {	/* Back up 1 line.	*/
+					do {
 						--i;
 					} while (i!=0 && msg[i-1]!='\n');
 				}
 				break;
 
-			case 0x03:		/* ^C			*/
-				j = 0;		/* Eat what we read.	*/
+			case 0x03:
+				j = 0;
 				while (i < nmsg)
 					msg[j++] = msg[i++];
 				nmsg = j;
 				eerase();
 				return (TRUE);
 
-			case 0x07:		/* ^G			*/
+			case 0x07:
 				ttbeep();
 				eerase();
 				return (ABORT);
 
-			default:		/* Loop on the rest.	*/
+			default:
 				continue;
 			}
 			break;
 		}
 	}
-	nmsg = 0;				/* Flow off the end.	*/
+	nmsg = 0;
 	eerase();
 	return (TRUE);
 }
 
-/*
- * Erase the echo line.
- */
 static void
 eerase(void)
 {
@@ -1301,19 +920,8 @@ eerase(void)
 	epresf = FALSE;
 }
 
-/* Deviation from original sources: Prototype needed for eread OR 
- * eread can be moved before ereply - this intrudes less on the original 
- * sources
- */
 static int ereply(char* fp, char* buf, int nbuf, ...);
 
-/*
- * Ask "yes" or "no" question.
- * Return ABORT if the user answers the question
- * with the abort ("^G") character. Return FALSE
- * for "no" and TRUE for "yes". No formatting
- * services are available.
- */
 static int
 eyesno(char * sp)
 {
@@ -1333,18 +941,8 @@ eyesno(char * sp)
 	}
 }
 
-/*
- * Write out a prompt, and read back a
- * reply. The prompt is now written out with full "eprintf"
- * formatting, although the arguments are in a rather strange
- * place. This is always a new message, there is no auto
- * completion, and the return is echoed as such.
- * 
- * Deviation from original source: K&R function declaration 
- * not allowed when using variadic function parameters.
- */
 static int ereply(char* fp, char* buf, int nbuf, ...)
-{    
+{
     va_list ap;
     int result;
     va_start(ap, nbuf);
@@ -1353,15 +951,6 @@ static int ereply(char* fp, char* buf, int nbuf, ...)
     return result;
 }
 
-/*
- * This is the general "read input from the
- * echo line" routine. The basic idea is that the prompt
- * string "prompt" is written to the echo line, and a one
- * line reply is read back into the supplied "buf" (with
- * maximum length "len"). The "flag" contains EFNEW (a
- * new prompt), an EFAUTO (autocomplete), or EFCR (echo
- * the carriage return as CR).
- */
 static int
 eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 {
@@ -1376,7 +965,7 @@ eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 	register int	bxtra;
 
 	cpos = 0;
-	if (kbdmop != NULL) {			/* In a macro.		*/
+	if (kbdmop != NULL) {
 		while ((c = *kbdmop++) != '\0')
 			buf[cpos++] = c;
 		buf[cpos] = '\0';
@@ -1414,7 +1003,7 @@ eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 					sp1 = sp1->s_symp;
 				}
 			}
-			if (nhits == 0)		/* No completion.	*/
+			if (nhits == 0)
 				continue;
 			for (i=0; i<nxtra && cpos<nbuf-1; ++i) {
 				c = sp2->s_name[cpos];
@@ -1422,12 +1011,12 @@ eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 				eputc(c);
 			}
 			ttflush();
-			if (nhits != 1)		/* Fake a CR if there	*/
-				continue;	/* is 1 choice.		*/
+			if (nhits != 1)
+				continue;
 			c = 0x0D;
 		}
 		switch (c) {
-		case 0x0D:			/* Return, done.	*/
+		case 0x0D:
 			buf[cpos] = '\0';
 			if (kbdmip != NULL) {
 				if (kbdmip+cpos+1 > &kbdm[NKBDM-3]) {
@@ -1445,14 +1034,14 @@ eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 			}
 			goto done;
 
-		case 0x07:			/* Bell, abort.		*/
+		case 0x07:
 			eputc(0x07);
 			(void) ctrlg(FALSE, 0, KRANDOM);
 			ttflush();
 			return (ABORT);
 
-		case 0x7F:			/* Rubout, erase.	*/
-		case 0x08:			/* Backspace, erase.	*/
+		case 0x7F:
+		case 0x08:
 			if (cpos != 0) {
 				ttputc('\b');
 				ttputc(' ');
@@ -1468,7 +1057,7 @@ eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 			}
 			break;
 
-		case 0x15:			/* C-U, kill line.	*/
+		case 0x15:
 			while (cpos != 0) {
 				ttputc('\b');
 				ttputc(' ');
@@ -1484,7 +1073,7 @@ eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
 			ttflush();
 			break;
 
-		default:			/* All the rest.	*/
+		default:
 			if (cpos < nbuf-1) {
 				buf[cpos++] = c;
 				eputc(c);
@@ -1498,13 +1087,6 @@ done:
 	return (TRUE);
 }
 
-/*
- * The "sp1" and "sp2" point to extended command
- * symbol table entries. The "cpos" is a horizontal position
- * in the name. Return the longest block of characters that can
- * be autocompleted at this point. Sometimes the two symbols
- * are the same, but this is normal.
- */
 static int
 getxtra(SYMBOL * sp1, SYMBOL * sp2, int cpos)
 {
@@ -1521,13 +1103,6 @@ getxtra(SYMBOL * sp1, SYMBOL * sp2, int cpos)
 	return (i - cpos);
 }
 
-/*
- * Special "printf" for the echo line.
- * Each call to "eprintf" starts a new line in the
- * echo area, and ends with an erase to end of the
- * echo line. The formatting is done by a call
- * to the standard formatting routine.
- */
 static void eprintf(char* fp, ...)
 {
 	va_list ap;
@@ -1541,13 +1116,6 @@ static void eprintf(char* fp, ...)
 	va_end(ap);
 }
 
-/*
- * Printf style formatting. This is
- * called by both "eprintf" and "ereply", to provide
- * formatting services to their clients. The move to the
- * start of the echo line, and the erase to the end of
- * the echo line, is done by the caller.
- */
 static void
 eformat(char * fp, va_list ap)
 {
@@ -1578,9 +1146,6 @@ eformat(char * fp, va_list ap)
 	}
 }
 
-/*
- * Put integer, in radix "r".
- */
 static void
 eputi(int i, int r)
 {
@@ -1591,9 +1156,6 @@ eputi(int i, int r)
 	eputc(i%r+'0');
 }
 
-/*
- * Put string.
- */
 static void
 eputs(char * s)
 {
@@ -1603,11 +1165,6 @@ eputs(char * s)
 		eputc(c);
 }
 
-/*
- * Put character. Watch for
- * control characters, and for the line
- * getting too long.
- */
 static void
 eputc(int c)
 {
@@ -1620,25 +1177,16 @@ eputc(int c)
 		++ttcol;
 	}
 }
-#define	NBLOCK	16			/* Line block chunk size	*/
+#define	NBLOCK	16
 
 #ifndef	KBLOCK
-#define	KBLOCK	256			/* Kill buffer block size.	*/
+#define	KBLOCK	256
 #endif
 
-static char	*kbufp	= NULL;			/* Kill buffer data.		*/
-static int	kused	= 0;			/* # of bytes used in KB.	*/
-static int	ksize	= 0;			/* # of bytes allocated in KB.	*/
+static char	*kbufp	= NULL;
+static int	kused	= 0;
+static int	ksize	= 0;
 
-/*
- * This routine allocates a block
- * of memory large enough to hold a LINE
- * containing "used" characters. The block is
- * always rounded up a bit. Return a pointer
- * to the new block, or NULL if there isn't
- * any memory left. Print a message in the
- * message line if no space.
- */
 static LINE *
 lalloc(int used)
 {
@@ -1646,8 +1194,8 @@ lalloc(int used)
 	register int	size;
 
 	size = (used+NBLOCK-1) & ~(NBLOCK-1);
-	if (size == 0)				/* Assume that an empty	*/
-		size = NBLOCK;			/* line is for type-in.	*/
+	if (size == 0)
+		size = NBLOCK;
 	if ((lp=(LINE *)malloc(sizeof(LINE)+size)) == NULL) {
 		eprintf("Cannot allocate %d bytes", size);
 		return (NULL);
@@ -1657,16 +1205,6 @@ lalloc(int used)
 	return (lp);
 }
 
-/*
- * Delete line "lp". Fix all of the
- * links that might point at it (they are
- * moved to offset 0 of the next line.
- * Unlink the line from whatever buffer it
- * might be in. Release the memory. The
- * buffers are updated too; the magic conditions
- * described in the above comments don't hold
- * here.
- */
 static void
 lfree(LINE * lp)
 {
@@ -1706,25 +1244,15 @@ lfree(LINE * lp)
 	free((char *) lp);
 }
 
-/*
- * This routine gets called when
- * a character is changed in place in the
- * current buffer. It updates all of the required
- * flags in the buffer and window system. The flag
- * used is passed as an argument; if the buffer is being
- * displayed in more than 1 window we change EDIT to
- * HARD. Set MODE if the mode line needs to be
- * updated (the "*" has to be set).
- */
 static void
 lchange(int flag)
 {
 	register WINDOW	*wp;
 
-	if (curbp->b_nwnd != 1)			/* Ensure hard.		*/
+	if (curbp->b_nwnd != 1)
 		flag = WFHARD;
-	if ((curbp->b_flag&BFCHG) == 0) {	/* First change, so 	*/
-		flag |= WFMODE;			/* update mode lines.	*/
+	if ((curbp->b_flag&BFCHG) == 0) {
+		flag |= WFMODE;
 		curbp->b_flag |= BFCHG;
 	}
 	wp = wheadp;
@@ -1735,18 +1263,6 @@ lchange(int flag)
 	}
 }
 
-/*
- * Insert "n" copies of the character "c"
- * at the current location of dot. In the easy case
- * all that happens is the text is stored in the line.
- * In the hard case, the line has to be reallocated.
- * When the window list is updated, take special
- * care; I screwed it up once. You always update dot
- * in the current window. You update mark, and a
- * dot in another window, if it is greater than
- * the place where you did the insert. Return TRUE
- * if all is well, and FALSE on errors.
- */
 static int
 linsert(int n, int c)
 {
@@ -1761,16 +1277,16 @@ linsert(int n, int c)
 
 	if(!ul)uc[ut++&4095]=c;
 	lchange(WFEDIT);
-	lp1 = curwp->w_dotp;			/* Current line		*/
-	if (lp1 == curbp->b_linep) {		/* At the end: special	*/
+	lp1 = curwp->w_dotp;
+	if (lp1 == curbp->b_linep) {
 		if (curwp->w_doto != 0) {
 			eprintf("bug: linsert");
 			return (FALSE);
 		}
-		if ((lp2=lalloc(n)) == NULL)	/* Allocate new line	*/
+		if ((lp2=lalloc(n)) == NULL)
 			return (FALSE);
-		lp3 = lp1->l_bp;		/* Previous line	*/
-		lp3->l_fp = lp2;		/* Link in		*/
+		lp3 = lp1->l_bp;
+		lp3->l_fp = lp2;
 		lp2->l_fp = lp1;
 		lp1->l_bp = lp2;
 		lp2->l_bp = lp3;
@@ -1780,8 +1296,8 @@ linsert(int n, int c)
 		curwp->w_doto = n;
 		return (TRUE);
 	}
-	doto = curwp->w_doto;			/* Save for later.	*/
-	if (lp1->l_used+n > lp1->l_size) {	/* Hard: reallocate	*/
+	doto = curwp->w_doto;
+	if (lp1->l_used+n > lp1->l_size) {
 		if ((lp2=lalloc(lp1->l_used+n)) == NULL)
 			return (FALSE);
 		cp1 = &lp1->l_text[0];
@@ -1796,17 +1312,17 @@ linsert(int n, int c)
 		lp1->l_fp->l_bp = lp2;
 		lp2->l_bp = lp1->l_bp;
 		free((char *) lp1);
-	} else {				/* Easy: in place	*/
-		lp2 = lp1;			/* Pretend new line	*/
+	} else {
+		lp2 = lp1;
 		lp2->l_used += n;
 		cp2 = &lp1->l_text[lp1->l_used];
 		cp1 = cp2-n;
 		while (cp1 != &lp1->l_text[doto])
 			*--cp2 = *--cp1;
 	}
-	for (i=0; i<n; ++i)			/* Add the characters	*/
+	for (i=0; i<n; ++i)
 		lp2->l_text[doto+i] = c;
-	wp = wheadp;				/* Update windows	*/
+	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_linep == lp1)
 			wp->w_linep = lp2;
@@ -1825,17 +1341,6 @@ linsert(int n, int c)
 	return (TRUE);
 }
 
-/*
- * Insert a newline into the buffer
- * at the current location of dot in the current
- * window. The funny ass-backwards way it does things
- * is not a botch; it just makes the last line in
- * the file not a special case. Return TRUE if everything
- * works out and FALSE on error (memory allocation
- * failure). The update of dot and mark is a bit
- * easier then in the above case, because the split
- * forces more updating.
- */
 static int
 lnewline(void)
 {
@@ -1848,11 +1353,11 @@ lnewline(void)
 
 	if(!ul)uc[ut++&4095]=0;
 	lchange(WFHARD);
-	lp1  = curwp->w_dotp;			/* Get the address and	*/
-	doto = curwp->w_doto;			/* offset of "."	*/
-	if ((lp2=lalloc(doto)) == NULL)		/* New first half line	*/
+	lp1  = curwp->w_dotp;
+	doto = curwp->w_doto;
+	if ((lp2=lalloc(doto)) == NULL)
 		return (FALSE);
-	cp1 = &lp1->l_text[0];			/* Shuffle text around	*/
+	cp1 = &lp1->l_text[0];
 	cp2 = &lp2->l_text[0];
 	while (cp1 != &lp1->l_text[doto])
 		*cp2++ = *cp1++;
@@ -1864,7 +1369,7 @@ lnewline(void)
 	lp1->l_bp = lp2;
 	lp2->l_bp->l_fp = lp2;
 	lp2->l_fp = lp1;
-	wp = wheadp;				/* Windows		*/
+	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_linep == lp1)
 			wp->w_linep = lp2;
@@ -1881,19 +1386,10 @@ lnewline(void)
 				wp->w_marko -= doto;
 		}
 		wp = wp->w_wndp;
-	}	
+	}
 	return (TRUE);
 }
 
-/*
- * This function deletes "n" bytes,
- * starting at dot. It understands how do deal
- * with end of lines, etc. It returns TRUE if all
- * of the characters were deleted, and FALSE if
- * they were not (because dot ran into the end of
- * the buffer. The "kflag" is TRUE if the text
- * should be put in the kill buffer.
- */
 static int
 ldelete(int n, int kflag)
 {
@@ -1907,12 +1403,12 @@ ldelete(int n, int kflag)
 	while (n != 0) {
 		dotp = curwp->w_dotp;
 		doto = curwp->w_doto;
-		if (dotp == curbp->b_linep)	/* Hit end of buffer.	*/
+		if (dotp == curbp->b_linep)
 			return (FALSE);
-		chunk = dotp->l_used-doto;	/* Size of chunk.	*/
+		chunk = dotp->l_used-doto;
 		if (chunk > n)
 			chunk = n;
-		if (chunk == 0) {		/* End of line, merge.	*/
+		if (chunk == 0) {
 			if(!ul)uc[ut++&4095]=-256;
 			lchange(WFHARD);
 			if (ldelnewline() == FALSE
@@ -1923,9 +1419,9 @@ ldelete(int n, int kflag)
 		}
 		lchange(WFEDIT);
 		if(!ul){int i_;for(i_=0;i_<chunk;i_++)uc[ut++&4095]=-lgetc(dotp,doto+i_);}
-		cp1 = &dotp->l_text[doto];	/* Scrunch text.	*/
+		cp1 = &dotp->l_text[doto];
 		cp2 = cp1 + chunk;
-		if (kflag != FALSE) {		/* Kill?		*/
+		if (kflag != FALSE) {
 			while (cp1 != cp2) {
 				if (kinsert(*cp1) == FALSE)
 					return (FALSE);
@@ -1936,13 +1432,13 @@ ldelete(int n, int kflag)
 		while (cp2 != &dotp->l_text[dotp->l_used])
 			*cp1++ = *cp2++;
 		dotp->l_used -= chunk;
-		wp = wheadp;			/* Fix windows		*/
+		wp = wheadp;
 		while (wp != NULL) {
 			if (wp->w_dotp==dotp && wp->w_doto>=doto) {
 				wp->w_doto -= chunk;
 				if (wp->w_doto < doto)
 					wp->w_doto = doto;
-			}	
+			}
 			if (wp->w_markp==dotp && wp->w_marko>=doto) {
 				wp->w_marko -= chunk;
 				if (wp->w_marko < doto)
@@ -1955,17 +1451,6 @@ ldelete(int n, int kflag)
 	return (TRUE);
 }
 
-/*
- * Delete a newline. Join the current line
- * with the next line. If the next line is the magic
- * header line always return TRUE; merging the last line
- * with the header line can be thought of as always being a
- * successful operation, even if nothing is done, and this makes
- * the kill buffer work "right". Easy cases can be done by
- * shuffling data around. Hard cases require that lines be moved
- * about in memory. Return FALSE on error and TRUE if all
- * looks ok. Called by "ldelete" only.
- */
 static int
 ldelnewline(void)
 {
@@ -1978,8 +1463,8 @@ ldelnewline(void)
 
 	lp1 = curwp->w_dotp;
 	lp2 = lp1->l_fp;
-	if (lp2 == curbp->b_linep) {		/* At the buffer end.	*/
-		if (lp1->l_used == 0)		/* Blank line.		*/
+	if (lp2 == curbp->b_linep) {
+		if (lp1->l_used == 0)
 			lfree(lp1);
 		return (TRUE);
 	}
@@ -2001,7 +1486,7 @@ ldelnewline(void)
 				wp->w_marko += lp1->l_used;
 			}
 			wp = wp->w_wndp;
-		}		
+		}
 		lp1->l_used += lp2->l_used;
 		lp1->l_fp = lp2->l_fp;
 		lp2->l_fp->l_bp = lp1;
@@ -2044,25 +1529,14 @@ ldelnewline(void)
 	return (TRUE);
 }
 
-/*
- * Replace plen characters before dot with argument string.
- * Control-J characters in st are interpreted as newlines.
- * There is a casehack disable flag (normally it likes to match
- * case of replacement to what was there).
- */
 static int
 lreplace(int plen, char * st, int f)
 {
-	register int	rlen;		/* replacement length		*/
-	register int	rtype;		/* capitalization 		*/
-	register int	c;		/* used for random characters	*/
-	register int	doto;		/* offset into line		*/
+	register int	rlen;
+	register int	rtype;
+	register int	c;
+	register int	doto;
 
-	/*
-	 * Find the capitalization of the word that was found.
-	 * f says use exact case of replacement string (same thing that
-	 * happens with lowercase found), so bypass check.
-	 */
 	backchar(TRUE, plen, KRANDOM);
 	rtype = _L;
 	c = lgetc(curwp->w_dotp, curwp->w_doto);
@@ -2076,11 +1550,6 @@ lreplace(int plen, char * st, int f)
 		}
 	}
 
-	/*
-	 * make the string lengths match (either pad the line
-	 * so that it will fit, or scrunch out the excess).
-	 * be careful with dot's offset.
-	 */
 	rlen = strlen(st);
 	doto = curwp->w_doto;
 	if (plen > rlen)
@@ -2091,11 +1560,6 @@ lreplace(int plen, char * st, int f)
 	}
 	curwp->w_doto = doto;
 
-	/*
-	 * do the replacement:  If was capital, then place first 
-	 * char as if upper, and subsequent chars as if lower.  
-	 * If inserting upper, check replacement for case.
-	 */
 	while ((c = *st++&0xff) != '\0') {
 		if ((rtype&_U)!=0  &&  ISLOWER(c)!=0)
 			c = TOUPPER(c);
@@ -2120,13 +1584,6 @@ lreplace(int plen, char * st, int f)
 	return (TRUE);
 }
 
-/*
- * Delete all of the text
- * saved in the kill buffer. Called by commands
- * when a new kill context is being created. The kill
- * buffer array is released, just in case the buffer has
- * grown to immense size. No errors.
- */
 static void
 kdelete(void)
 {
@@ -2138,15 +1595,6 @@ kdelete(void)
 	}
 }
 
-/*
- * Insert a character to the kill buffer,
- * enlarging the buffer if there isn't any room. Always
- * grow the buffer in chunks, on the assumption that if you
- * put something in the kill buffer you are going to put
- * more stuff there too later. Return TRUE if all is
- * well, and FALSE on errors. Print a message on
- * errors.
- */
 static int
 kinsert(int c)
 {
@@ -2169,12 +1617,6 @@ kinsert(int c)
 	return (TRUE);
 }
 
-/*
- * This function gets characters from
- * the kill buffer. If the character index "n" is
- * off the end, it returns "-1". This lets the caller
- * just scan along until it gets a "-1" back.
- */
 static int
 kremove(int n)
 {
@@ -2182,11 +1624,8 @@ kremove(int n)
 		return (-1);
 	return (kbufp[n] & 0xFF);
 }
-#define	DIRLIST	0			/* Disarmed!			*/
+#define	DIRLIST	0
 
-/*
- * Defined by "main.c".
- */
 static int	ctrlg(int, int, int);
 static int	quit(int, int, int);
 static int	ctlxlp(int, int, int);
@@ -2196,9 +1635,6 @@ static int	jeffexit(int, int, int);
 static int	undo(int, int, int);
 static int	showversion(int, int, int);
 
-/*
- * Defined by "search.c".
- */
 static int	forwsearch(int, int, int);
 static int	backsearch(int, int, int);
 static int	searchagain(int, int, int);
@@ -2206,9 +1642,6 @@ static int	forwisearch(int, int, int);
 static int	backisearch(int, int, int);
 static int	queryrepl(int, int, int);
 
-/*
- * Defined by "basic.c".
- */
 static int	gotobol(int, int, int);
 static int	backchar(int, int, int);
 static int	gotoeol(int, int, int);
@@ -2223,37 +1656,23 @@ static int	setmark(int, int, int);
 static int	swapmark(int, int, int);
 static int	gotoline(int, int, int);
 
-/*
- * Defined by "buffer.c".
- */
 static int	listbuffers(int, int, int);
 static int	usebuffer(int, int, int);
 static int	killbuffer(int, int, int);
 
 #if	DIRLIST
-/*
- * Defined by "dirlist.c".
- */
+
 static int	dirlist(int, int, int);
 #endif
 
-/*
- * Defined by "display.c".
- */
 static int	readmsg(int, int, int);
 
-/*
- * Defined by "file.c".
- */
 static int	fileread(int, int, int);
 static int	filevisit(int, int, int);
 static int	filewrite(int, int, int);
 static int	filesave(int, int, int);
 static int	filename(int, int, int);
 
-/*
- * Defined by "random.c".
- */
 static int	selfinsert(int, int, int);
 static int	showcpos(int, int, int);
 static int	twiddle(int, int, int);
@@ -2267,22 +1686,13 @@ static int	backdel(int, int, int);
 static int	killline(int, int, int);
 static int	yank(int, int, int);
 
-/*
- * Defined by "region.c".
- */
 static int	killregion(int, int, int);
 static int	copyregion(int, int, int);
 static int	lowerregion(int, int, int);
 static int	upperregion(int, int, int);
 
-/*
- * Defined by "spawn.c".
- */
 static int	spawncli(int, int, int);
 
-/*
- * Defined by "window.c".
- */
 static int	reposition(int, int, int);
 static int	refresh(int, int, int);
 static int	nextwind(int, int, int);
@@ -2294,9 +1704,6 @@ static int	splitwind(int, int, int);
 static int	enlargewind(int, int, int);
 static int	shrinkwind(int, int, int);
 
-/*
- * Defined by "word.c".
- */
 static int	backword(int, int, int);
 static int	forwword(int, int, int);
 static int	upperword(int, int, int);
@@ -2305,9 +1712,6 @@ static int	capword(int, int, int);
 static int	delfword(int, int, int);
 static int	delbword(int, int, int);
 
-/*
- * Defined by "extend.c".
- */
 static int	extend(int, int, int);
 static int	help(int, int, int);
 static int	bindtokey(int, int, int);
@@ -2315,15 +1719,11 @@ static int	wallchart(int, int, int);
 static int	backdir(int, int, int);
 
 typedef	struct	{
-	short	k_key;			/* Key to bind.			*/
-	int	(*k_funcp)(int, int, int);		/* Function.			*/
-	char	*k_name;		/* Function name string.	*/
+	short	k_key;
+	int	(*k_funcp)(int, int, int);
+	char	*k_name;
 }	KEY;
 
-/*
- * Default key binding table. VSCode-style shortcuts.
- * Ctrl+C=Copy, Ctrl+V=Paste, Ctrl+X=Cut, Ctrl+S=Save, etc.
- */
 KEY	key[] = {
 	KCTRL|'A',	gotobol,	"goto-bol",
 	KCTRL|'B',	backdir,	"back-dir",
@@ -2716,7 +2116,7 @@ makelist(void)
 		cp2 = &bp->b_fname[0];		/* File name		*/
 		if (*cp2 != 0) {
 			while (cp1 < &line[1+1+6+1+NBUFN+1])
-				*cp1++ = ' ';		
+				*cp1++ = ' ';
 			while ((c = *cp2++) != 0) {
 				if (cp1 < &line[128-1])
 					*cp1++ = c;
@@ -2796,13 +2196,6 @@ anycb(void)
 	return (FALSE);
 }
 
-/*
- * Search for a buffer, by name.
- * If not found, and the "cflag" is TRUE,
- * create a buffer and put it in the list of
- * all buffers. Return pointer to the BUFFER
- * block for the buffer.
- */
 static BUFFER *
 bfind(char * bname, int cflag)
 {
@@ -2821,15 +2214,6 @@ bfind(char * bname, int cflag)
 	return (bp);
 }
 
-/*
- * Create a buffer, by name.
- * Return a pointer to the BUFFER header
- * block, or NULL if the buffer cannot
- * be created. The BUFFER is not put in the
- * list of all buffers; this is called by
- * "edinit" to create the buffer list
- * buffer.
- */
 static BUFFER *
 bcreate(char * bname)
 {
@@ -2857,44 +2241,25 @@ bcreate(char * bname)
 	return (bp);
 }
 
-/*
- * This routine blows away all of the text
- * in a buffer. If the buffer is marked as changed
- * then we ask if it is ok to blow it away; this is
- * to save the user the grief of losing text. The
- * window chain is nearly always wrong if this gets
- * called; the caller must arrange for the updates
- * that are required. Return TRUE if everything
- * looks good.
- */
 static int
 bclear(BUFFER * bp)
 {
 	register LINE	*lp;
 	register int	s;
-	
-	if ((bp->b_flag&BFCHG) != 0		/* Changed.		*/
+
+	if ((bp->b_flag&BFCHG) != 0
 	&& (s=eyesno("Discard changes")) != TRUE)
 		return (s);
-	bp->b_flag  &= ~BFCHG;			/* Not changed		*/
+	bp->b_flag  &= ~BFCHG;
 	while ((lp=lforw(bp->b_linep)) != bp->b_linep)
 		lfree(lp);
-	bp->b_dotp  = bp->b_linep;		/* Fix "."		*/
+	bp->b_dotp  = bp->b_linep;
 	bp->b_doto  = 0;
-	bp->b_markp = NULL;			/* Invalidate "mark"	*/
+	bp->b_markp = NULL;
 	bp->b_marko = 0;
 	return (TRUE);
 }
-/*
- * Reposition dot in the current
- * window to line "n". If the argument is
- * positive, it is that line. If it is negative it
- * is that line from the bottom. If it is 0 the window
- * is centered (this is what the standard redisplay code
- * does). With no argument it defaults to 1.
- * Because of the default, it works like in
- * Gosling.
- */
+
 static int
 reposition(int f, int n, int k)
 {
@@ -2903,21 +2268,6 @@ reposition(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Refresh the display. A call is made to the
- * "ttresize" entry in the terminal handler, which tries
- * to reset "nrow" and "ncol". They will, however, never
- * be set outside of the NROW or NCOL range. If the display
- * changed size, arrange that everything is redone, then
- * call "update" to fix the display. We do this so the
- * new size can be displayed. In the normal case the
- * call to "update" in "main.c" refreshes the screen,
- * and all of the windows need not be recomputed.
- * Note that when you get to the "display unusable"
- * message, the screen will be messed up. If you make
- * the window bigger again, and send another command,
- * everything will get fixed!
- */
 static int
 refresh(int f, int n, int k)
 {
@@ -2929,15 +2279,15 @@ refresh(int f, int n, int k)
 	oldncol = ncol;
 	ttresize();
 	if (nrow!=oldnrow || ncol!=oldncol) {
-		wp = wheadp;			/* Find last.		*/
+		wp = wheadp;
 		while (wp->w_wndp != NULL)
 			wp = wp->w_wndp;
-		if (nrow < wp->w_toprow+3) {	/* Check if too small.	*/
+		if (nrow < wp->w_toprow+3) {
 			eprintf("Display unusable");
 			return (FALSE);
-		}		
+		}
 		wp->w_ntrows = nrow-wp->w_toprow-2;
-		wp = wheadp;			/* Redraw all.		*/
+		wp = wheadp;
 		while (wp != NULL) {
 			wp->w_flag |= WFMODE|WFHARD;
 			wp = wp->w_wndp;
@@ -2950,14 +2300,6 @@ refresh(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * The command make the next
- * window (next => down the screen)
- * the current window. There are no real
- * errors, although the command does
- * nothing if there is only 1 window on
- * the screen.
- */
 static int
 nextwind(int f, int n, int k)
 {
@@ -2970,13 +2312,6 @@ nextwind(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This command makes the previous
- * window (previous => up the screen) the
- * current window. There arn't any errors,
- * although the command does not do a lot
- * if there is 1 window.
- */
 static int
 prevwind(int f, int n, int k)
 {
@@ -2994,30 +2329,12 @@ prevwind(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This command moves the current
- * window down by "arg" lines. Recompute
- * the top line in the window. The move up and
- * move down code is almost completely the same;
- * most of the work has to do with reframing the
- * window, and picking a new dot. We share the
- * code by having "move down" just be an interface
- * to "move up".
- */
 static int
 mvdnwind(int f, int n, int k)
 {
 	return (mvupwind(f, -n, KRANDOM));
 }
 
-/*
- * Move the current window up by "arg"
- * lines. Recompute the new top line of the window.
- * Look to see if "." is still on the screen. If it is,
- * you win. If it isn't, then move "." to center it
- * in the new framing of the window (this command does
- * not really move "."; it moves the frame).
- */
 static int
 mvupwind(int f, int n, int k)
 {
@@ -3033,7 +2350,7 @@ mvupwind(int f, int n, int k)
 			lp = lback(lp);
 	}
 	curwp->w_linep = lp;
-	curwp->w_flag |= WFHARD;		/* Mode line is OK.	*/
+	curwp->w_flag |= WFHARD;
 	for (i=0; i<curwp->w_ntrows; ++i) {
 		if (lp == curwp->w_dotp)
 			return (TRUE);
@@ -3050,17 +2367,6 @@ mvupwind(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This command makes the current
- * window the only window on the screen.
- * Try to set the framing
- * so that "." does not have to move on
- * the display. Some care has to be taken
- * to keep the values of dot and mark
- * in the buffer structures right if the
- * distruction of a window makes a buffer
- * become undisplayed.
- */
 static int
 onlywind(int f, int n, int k)
 {
@@ -3097,19 +2403,12 @@ onlywind(int f, int n, int k)
 		lp = lback(lp);
 	}
 	curwp->w_toprow = 0;
-	curwp->w_ntrows = nrow-2;		/* 2 = mode, echo.	*/
+	curwp->w_ntrows = nrow-2;
 	curwp->w_linep  = lp;
 	curwp->w_flag  |= WFMODE|WFHARD;
 	return (TRUE);
 }
 
-/*
- * Split the current window. A window
- * smaller than 3 lines cannot be split.
- * The only other error that is possible is
- * a "malloc" failure allocating the structure
- * for the new window.
- */
 static int
 splitwind(int f, int n, int k)
 {
@@ -3129,7 +2428,7 @@ splitwind(int f, int n, int k)
 		eprintf("Cannot allocate WINDOW block");
 		return (FALSE);
 	}
-	++curbp->b_nwnd;			/* Displayed twice.	*/
+	++curbp->b_nwnd;
 	wp->w_bufp  = curbp;
 	wp->w_dotp  = curwp->w_dotp;
 	wp->w_doto  = curwp->w_doto;
@@ -3137,8 +2436,8 @@ splitwind(int f, int n, int k)
 	wp->w_marko = curwp->w_marko;
 	wp->w_flag  = 0;
 	wp->w_force = 0;
-	ntru = (curwp->w_ntrows-1) / 2;		/* Upper size		*/
-	ntrl = (curwp->w_ntrows-1) - ntru;	/* Lower size		*/
+	ntru = (curwp->w_ntrows-1) / 2;
+	ntrl = (curwp->w_ntrows-1) - ntru;
 	lp = curwp->w_linep;
 	ntrd = 0;
 	while (lp != curwp->w_dotp) {
@@ -3146,15 +2445,15 @@ splitwind(int f, int n, int k)
 		lp = lforw(lp);
 	}
 	lp = curwp->w_linep;
-	if (ntrd <= ntru) {			/* Old is upper window.	*/
-		if (ntrd == ntru)		/* Hit mode line.	*/
+	if (ntrd <= ntru) {
+		if (ntrd == ntru)
 			lp = lforw(lp);
 		curwp->w_ntrows = ntru;
 		wp->w_wndp = curwp->w_wndp;
 		curwp->w_wndp = wp;
 		wp->w_toprow = curwp->w_toprow+ntru+1;
 		wp->w_ntrows = ntrl;
-	} else {				/* Old is lower window	*/
+	} else {
 		wp1 = NULL;
 		wp2 = wheadp;
 		while (wp2 != curwp) {
@@ -3168,27 +2467,19 @@ splitwind(int f, int n, int k)
 		wp->w_wndp   = curwp;
 		wp->w_toprow = curwp->w_toprow;
 		wp->w_ntrows = ntru;
-		++ntru;				/* Mode line.		*/
+		++ntru;
 		curwp->w_toprow += ntru;
 		curwp->w_ntrows  = ntrl;
 		while (ntru--)
 			lp = lforw(lp);
 	}
-	curwp->w_linep = lp;			/* Adjust the top lines	*/
-	wp->w_linep = lp;			/* if necessary.	*/
+	curwp->w_linep = lp;
+	wp->w_linep = lp;
 	curwp->w_flag |= WFMODE|WFHARD;
 	wp->w_flag |= WFMODE|WFHARD;
 	return (TRUE);
 }
 
-/*
- * Enlarge the current window.
- * Find the window that loses space. Make
- * sure it is big enough. If so, hack the window
- * descriptions, and ask redisplay to do all the
- * hard work. You don't just set "force reframe"
- * because dot would move.
- */
 static int
 enlargewind(int f, int n, int k)
 {
@@ -3211,13 +2502,13 @@ enlargewind(int f, int n, int k)
 		eprintf("Impossible change");
 		return (FALSE);
 	}
-	if (curwp->w_wndp == adjwp) {		/* Shrink below.	*/
+	if (curwp->w_wndp == adjwp) {
 		lp = adjwp->w_linep;
 		for (i=0; i<n && lp!=adjwp->w_bufp->b_linep; ++i)
 			lp = lforw(lp);
 		adjwp->w_linep  = lp;
 		adjwp->w_toprow += n;
-	} else {				/* Shrink above.	*/
+	} else {
 		lp = curwp->w_linep;
 		for (i=0; i<n && lback(lp)!=curbp->b_linep; ++i)
 			lp = lback(lp);
@@ -3231,12 +2522,6 @@ enlargewind(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Shrink the current window.
- * Find the window that gains space. Hack at
- * the window descriptions. Ask the redisplay to
- * do all the hard work.
- */
 static int
 shrinkwind(int f, int n, int k)
 {
@@ -3259,13 +2544,13 @@ shrinkwind(int f, int n, int k)
 		eprintf("Impossible change");
 		return (FALSE);
 	}
-	if (curwp->w_wndp == adjwp) {		/* Grow below.		*/
+	if (curwp->w_wndp == adjwp) {
 		lp = adjwp->w_linep;
 		for (i=0; i<n && lback(lp)!=adjwp->w_bufp->b_linep; ++i)
 			lp = lback(lp);
 		adjwp->w_linep  = lp;
 		adjwp->w_toprow -= n;
-	} else {				/* Grow above.		*/
+	} else {
 		lp = curwp->w_linep;
 		for (i=0; i<n && lp!=curbp->b_linep; ++i)
 			lp = lforw(lp);
@@ -3279,14 +2564,6 @@ shrinkwind(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Pick a window for a pop-up.
- * Split the screen if there is only
- * one window. Pick the uppermost window that
- * isn't the current window. An LRU algorithm
- * might be better. Return a pointer, or
- * NULL on error.
- */
 static WINDOW *
 wpopup(void)
 {
@@ -3295,17 +2572,12 @@ wpopup(void)
 	if (wheadp->w_wndp == NULL
 	&& splitwind(FALSE, 0, KRANDOM) == FALSE)
 		return (NULL);
-	wp = wheadp;				/* Find window to use	*/
+	wp = wheadp;
 	while (wp!=NULL && wp==curwp)
 		wp = wp->w_wndp;
 	return (wp);
 }
-/*
- * Read a file into the current
- * buffer. This is really easy; all you do it
- * find the name of the file, and call the standard
- * "read a file into the current buffer" code.
- */
+
 static int
 fileread(int f, int n, int k)
 {
@@ -3318,14 +2590,6 @@ fileread(int f, int n, int k)
 	return (readin(fname));
 }
 
-/*
- * Select a file for editing.
- * Look around to see if you can find the
- * fine in another buffer; if you can find it
- * just switch to the buffer. If you cannot find
- * the file, create a new buffer, read in the
- * text, and switch to the new buffer.
- */
 static int
 filevisit(int f, int n, int k)
 {
@@ -3379,12 +2643,12 @@ filevisit(int f, int n, int k)
 			return (TRUE);
 		}
 	}
-	makename(bname, fname);			/* New buffer name.	*/
+	makename(bname, fname);
 	while ((bp=bfind(bname, FALSE)) != NULL) {
 		s = ereply("Buffer name: ", bname, NBUFN);
-		if (s == ABORT)			/* ^G to just quit	*/
+		if (s == ABORT)
 			return (s);
-		if (s == FALSE) {		/* CR to clobber it	*/
+		if (s == FALSE) {
 			makename(bname, fname);
 			break;
 		}
@@ -3393,30 +2657,18 @@ filevisit(int f, int n, int k)
 		eprintf("Cannot create buffer");
 		return (FALSE);
 	}
-	if (--curbp->b_nwnd == 0) {		/* Undisplay.		*/
+	if (--curbp->b_nwnd == 0) {
 		curbp->b_dotp = curwp->w_dotp;
 		curbp->b_doto = curwp->w_doto;
 		curbp->b_markp = curwp->w_markp;
 		curbp->b_marko = curwp->w_marko;
 	}
-	curbp = bp;				/* Switch to it.	*/
+	curbp = bp;
 	curwp->w_bufp = bp;
 	curbp->b_nwnd++;
-	return (readin(fname));			/* Read it in.		*/
+	return (readin(fname));
 }
 
-/*
- * Read the file "fname" into the current buffer.
- * Make all of the text in the buffer go away, after checking
- * for unsaved changes. This is called by the "read" command, the
- * "visit" command, and the mainline (for "e file"). If the
- * BACKUP conditional is set, then this routine also does the read
- * end of backup processing. The BFBAK flag, if set in a buffer,
- * says that a backup should be taken. It is set when a file is
- * read in, but not on a new file (you don't need to make a backup
- * copy of nothing). Return a standard status. Print a summary
- * (lines read, error message) out as well.
- */
 static int
 readin(char * fname)
 {
@@ -3430,18 +2682,14 @@ readin(char * fname)
 	register int	nline;
 	char		line[NLINE];
 
-	bp = curbp;				/* Cheap.		*/
-	if ((s=bclear(bp)) != TRUE)		/* Might be old.	*/
+	bp = curbp;
+	if ((s=bclear(bp)) != TRUE)
 		return (s);
-#if	BACKUP
-	bp->b_flag &= ~(BFCHG|BFBAK);		/* No change, backup.	*/
-#else
-	bp->b_flag &= ~BFCHG;			/* No change.		*/
-#endif
+	bp->b_flag &= ~BFCHG;
 	strcpy(bp->b_fname, fname);
-	if ((s=ffropen(fname)) == FIOERR) 	/* Hard file open.	*/
+	if ((s=ffropen(fname)) == FIOERR)
 		goto out;
-	if (s == FIOFNF) {			/* File not found.	*/
+	if (s == FIOFNF) {
 		if (kbdmop == NULL)
 			eprintf("[New file]");
 		goto out;
@@ -3450,8 +2698,8 @@ readin(char * fname)
 	while ((s=ffgetline(line, NLINE)) == FIOSUC) {
 		nbytes = strlen(line);
 		if ((lp1=lalloc(nbytes)) == NULL) {
-			s = FIOERR;		/* Keep message on the	*/
-			break;			/* display.		*/
+			s = FIOERR;
+			break;
 		}
 		lp2 = lback(curbp->b_linep);
 		lp2->l_fp = lp1;
@@ -3462,16 +2710,13 @@ readin(char * fname)
 			lputc(lp1, i, line[i]);
 		++nline;
 	}
-	ffclose();				/* Ignore errors.	*/
-	if (s==FIOEOF && kbdmop==NULL) {	/* Don't zap an error.	*/
+	ffclose();
+	if (s==FIOEOF && kbdmop==NULL) {
 		if (nline == 1)
 			eprintf("[Read 1 line]");
 		else
 			eprintf("[Read %d lines]", nline);
 	}
-#if	BACKUP
-	curbp->b_flag |= BFBAK;			/* Need a backup.	*/
-#endif
 out:
 	for (wp=wheadp; wp!=NULL; wp=wp->w_wndp) {
 		if (wp->w_bufp == curbp) {
@@ -3483,7 +2728,7 @@ out:
 			wp->w_flag |= WFMODE|WFHARD;
 		}
 	}
-	if (s == FIOERR)			/* False if error.	*/
+	if (s == FIOERR)
 		return (FALSE);
 	return (TRUE);
 }
@@ -3504,14 +2749,6 @@ static int
 backdir(int f, int n, int k)
 {if(dirmode){filldir("..");}else{char d[80],*p;strcpy(d,curbp->b_fname);p=strrchr(d,'/');if(p)*p=0;else*d=0;filldir(*d?d:".");}return TRUE;}
 
-/*
- * Take a file name, and from it
- * fabricate a buffer name. This routine knows
- * about the syntax of file names on the target system.
- * BDC1		left scan delimiter.
- * BDC2		optional second left scan delimiter.
- * BDC3		optional right scan delimiter.
- */
 static void
 makename(char * bname, char * fname)
 {
@@ -3539,15 +2776,6 @@ makename(char * bname, char * fname)
 	*cp2 = 0;
 }
 
-/*
- * Ask for a file name, and write the
- * contents of the current buffer to that file.
- * Update the remembered file name and clear the
- * buffer changed flag. This handling of file names
- * is different from the earlier versions, and
- * is more compatable with Gosling EMACS than
- * with ITS EMACS.
- */
 static int
 filewrite(int f, int n, int k)
 {
@@ -3561,71 +2789,40 @@ filewrite(int f, int n, int k)
 	if ((s=writeout(fname)) == TRUE) {
 		strcpy(curbp->b_fname, fname);
 		curbp->b_flag &= ~BFCHG;
-		wp = wheadp;			/* Update mode lines.	*/
+		wp = wheadp;
 		while (wp != NULL) {
 			if (wp->w_bufp == curbp)
 				wp->w_flag |= WFMODE;
 			wp = wp->w_wndp;
 		}
 	}
-#if	BACKUP
-	curbp->b_flag &= ~BFBAK;		/* No backup.		*/
-#endif
 	return (s);
 }
 
-/*
- * Save the contents of the current buffer back into
- * its associated file. Do nothing if there have been no changes
- * (is this a bug, or a feature). Error if there is no remembered
- * file name. If this is the first write since the read or visit,
- * then a backup copy of the file is made.
- */
 static int
 filesave(int f, int n, int k)
 {
 	register WINDOW	*wp;
 	register int	s;
 
-	if ((curbp->b_flag&BFCHG) == 0)		/* Return, no changes.	*/
+	if ((curbp->b_flag&BFCHG) == 0)
 		return (TRUE);
-	if (curbp->b_fname[0] == 0) {		/* Must have a name.	*/
+	if (curbp->b_fname[0] == 0) {
 		eprintf("No file name");
 		return (FALSE);
 	}
-#if	BACKUP
-	if ((curbp->b_flag&BFBAK) != 0) {
-		s = fbackupfile(curbp->b_fname);
-		if (s == ABORT)			/* Hard error.		*/
-			return (s);
-		if (s == FALSE			/* Softer error.	*/
-		&& (s=eyesno("Backup error, save anyway")) != TRUE)
-			return (s);
-	}
-#endif
 	if ((s=writeout(curbp->b_fname)) == TRUE) {
 		curbp->b_flag &= ~BFCHG;
-		wp = wheadp;			/* Update mode lines.	*/
+		wp = wheadp;
 		while (wp != NULL) {
 			if (wp->w_bufp == curbp)
 				wp->w_flag |= WFMODE;
 			wp = wp->w_wndp;
 		}
 	}
-#if	BACKUP
-	curbp->b_flag &= ~BFBAK;		/* No backup.		*/
-#endif
 	return (s);
 }
 
-/*
- * This function performs the details of file
- * writing. Uses the file management routines in the
- * "fileio.c" package. The number of lines written is
- * displayed. Sadly, it looks inside a LINE; provide
- * a macro for this. Most of the grief is error
- * checking of some sort.
- */
 static int
 writeout(char * fn)
 {
@@ -3633,17 +2830,17 @@ writeout(char * fn)
 	register LINE	*lp;
 	register int	nline;
 
-	if ((s=ffwopen(fn)) != FIOSUC)		/* Open writes message.	*/
+	if ((s=ffwopen(fn)) != FIOSUC)
 		return (FALSE);
-	lp = lforw(curbp->b_linep);		/* First line.		*/
-	nline = 0;				/* Number of lines.	*/
+	lp = lforw(curbp->b_linep);
+	nline = 0;
 	while (lp != curbp->b_linep) {
 		if ((s=ffputline(&lp->l_text[0], llength(lp))) != FIOSUC)
 			break;
 		++nline;
 		lp = lforw(lp);
 	}
-	if (s == FIOSUC) {			/* No write error.	*/
+	if (s == FIOSUC) {
 		s = ffclose();
 		if (s==FIOSUC && kbdmop==NULL) {
 			if (nline == 1)
@@ -3651,22 +2848,13 @@ writeout(char * fn)
 			else
 				eprintf("[Wrote %d lines]", nline);
 		}
-	} else					/* Ignore close error	*/
-		ffclose();			/* if a write error.	*/
-	if (s != FIOSUC)			/* Some sort of error.	*/
+	} else
+		ffclose();
+	if (s != FIOSUC)
 		return (FALSE);
 	return (TRUE);
 }
 
-/*
- * The command allows the user
- * to modify the file name associated with
- * the current buffer. It is like the "f" command
- * in UNIX "ed". The operation is simple; just zap
- * the name in the BUFFER structure, and mark the windows
- * as needing an update. You can type a blank line at the
- * prompt if you wish.
- */
 static int
 filename(int f, int n, int k)
 {
@@ -3677,27 +2865,16 @@ filename(int f, int n, int k)
 	if ((s=ereply("Name: ", fname, NFILEN)) == ABORT)
 		return (s);
 	adjustcase(fname);
-	strcpy(curbp->b_fname, fname);		/* Fix name.		*/
-	wp = wheadp;				/* Update mode lines.	*/
+	strcpy(curbp->b_fname, fname);
+	wp = wheadp;
 	while (wp != NULL) {
 		if (wp->w_bufp == curbp)
 			wp->w_flag |= WFMODE;
 		wp = wp->w_wndp;
 	}
-#if	BACKUP
-	curbp->b_flag &= ~BFBAK;		/* No backup.		*/
-#endif
 	return (TRUE);
 }
-/*
- * Display a bunch of useful information about
- * the current location of dot. The character under the
- * cursor (in octal), the current line, row, and column, and
- * approximate position of the cursor in the file (as a percentage)
- * is displayed. The column position assumes an infinite position
- * display; it does not truncate just because the screen does.
- * This is normally bound to "C-X =".
- */
+
 static int
 showcpos(int f, int n, int k)
 {
@@ -3714,10 +2891,10 @@ showcpos(int f, int n, int k)
 	register int	i;
 	register int	c;
 
-	clp = lforw(curbp->b_linep);		/* Collect the data.	*/
+	clp = lforw(curbp->b_linep);
 	cbo = 0;
 	nchar = 0;
-	nline = 1;				/* Origin 1.		*/
+	nline = 1;
 	for (;;) {
 		if (clp == curwp->w_dotp) {
 			cline = nline;
@@ -3734,19 +2911,19 @@ showcpos(int f, int n, int k)
 				break;
 			clp = lforw(clp);
 			cbo = 0;
-			++nline;		/* Count a line.	*/
+			++nline;
 		} else
 			++cbo;
-		++nchar;			/* Count a character.	*/
+		++nchar;
 	}
-	row = curwp->w_toprow;			/* Determine row.	*/
+	row = curwp->w_toprow;
 	clp = curwp->w_linep;
 	while (clp!=curbp->b_linep && clp!=curwp->w_dotp) {
 		++row;
 		clp = lforw(clp);
 	}
-	++row;					/* Convert to origin 1.	*/
-	col = 0;				/* Determine column.	*/
+	++row;
+	col = 0;
 	for (i=0; i<curwp->w_doto; ++i) {
 		c = lgetc(curwp->w_dotp, i);
 		if (c == '\t')
@@ -3755,28 +2932,18 @@ showcpos(int f, int n, int k)
 			++col;
 		++col;
 	}
-	++col;					/* Convert to origin 1.	*/
-	ratio = 0;				/* Ratio before dot.	*/
+	++col;
+	ratio = 0;
 	if (nchar != 0) {
 		ratio = (100L*cchar) / nchar;
-		if (ratio==0 && cchar!=0)	/* Allow 0% only at the	*/
-			ratio = 1;		/* start of the file.	*/
+		if (ratio==0 && cchar!=0)
+			ratio = 1;
 	}
 	eprintf("[CH:0%o Line:%d Row:%d Col:%d %d%% of %d]",
 		cbyte, cline, row, col, ratio, nchar);
 	return (TRUE);
 }
 
-/*
- * Twiddle the two characters on either side of
- * dot. If dot is at the end of the line twiddle the
- * two characters before it. Return with an error if dot
- * is at the beginning of line; it seems to be a bit
- * pointless to make this work. This fixes up a very
- * common typo with a single stroke. Normally bound
- * to "C-T". This always works within a line, so
- * "WFEDIT" is good enough.
- */
 static int
 twiddle(int f, int n, int k)
 {
@@ -3799,14 +2966,6 @@ twiddle(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Quote the next character, and
- * insert it into the buffer. All the characters
- * are taken literally, with the exception of the newline,
- * which always has its line splitting meaning. The character
- * is always read, even if it is inserted 0 times, for
- * regularity.
- */
 static int
 quote(int f, int n, int k)
 {
@@ -3838,16 +2997,6 @@ quote(int f, int n, int k)
 	return (linsert(n, c));
 }
 
-/*
- * Ordinary text characters are bound to this function,
- * which inserts them into the buffer. Characters marked as control
- * characters (using the CTRL flag) may be remapped to their ASCII
- * equivalent. This makes TAB (C-I) work right, and also makes the
- * world look reasonable if a control character is bound to this
- * this routine by hand. Any META or CTLX flags on the character
- * are discarded. This is the only routine that actually looks
- * the the "k" argument.
- */
 static int
 selfinsert(int f, int n, int k)
 {
@@ -3860,18 +3009,11 @@ selfinsert(int f, int n, int k)
 	if (n == 0)
 		return (TRUE);
 	c = k & KCHAR;
-	if ((k&KCTRL)!=0 && c>='@' && c<='_')	/* ASCII-ify.		*/
+	if ((k&KCTRL)!=0 && c>='@' && c<='_')
 		c -= '@';
 	return (linsert(n, c));
 }
 
-/*
- * Open up some blank space. The basic plan
- * is to insert a bunch of newlines, and then back
- * up over them. Everything is done by the subcommand
- * procerssors. They even handle the looping. Normally
- * this is bound to "C-O".
- */
 static int
 openline(int f, int n, int k)
 {
@@ -3882,25 +3024,15 @@ openline(int f, int n, int k)
 		return (FALSE);
 	if (n == 0)
 		return (TRUE);
-	i = n;					/* Insert newlines.	*/
+	i = n;
 	do {
 		s = lnewline();
 	} while (s==TRUE && --i);
-	if (s == TRUE)				/* Then back up overtop	*/
-		s = backchar(f, n, KRANDOM);	/* of them all.		*/
+	if (s == TRUE)
+		s = backchar(f, n, KRANDOM);
 	return (s);
 }
 
-/*
- * Insert a newline.
- * If you are at the end of the line and the
- * next line is a blank line, just move into the
- * blank line. This makes "C-O" and "C-X C-O" work
- * nicely, and reduces the ammount of screen
- * update that has to be done. This would not be
- * as critical if screen update were a lot
- * more efficient.
- */
 static int
 newline(int f, int n, int k)
 {
@@ -3922,16 +3054,6 @@ newline(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Delete blank lines around dot.
- * What this command does depends if dot is
- * sitting on a blank line. If dot is sitting on a
- * blank line, this command deletes all the blank lines
- * above and below the current line. If it is sitting
- * on a non blank line then it deletes all of the
- * blank lines after the line. Normally this command
- * is bound to "C-X C-O". Any argument is ignored.
- */
 static int
 deblank(int f, int n, int k)
 {
@@ -3953,18 +3075,6 @@ deblank(int f, int n, int k)
 	return (ldelete(nld, FALSE));
 }
 
-/*
- * Insert a newline, then enough
- * tabs and spaces to duplicate the indentation
- * of the previous line. Assumes tabs are every eight
- * characters. Quite simple. Figure out the indentation
- * of the current line. Insert a newline by calling
- * the standard routine. Insert the indentation by
- * inserting the right number of tabs and spaces.
- * Return TRUE if all ok. Return FALSE if one
- * of the subcomands failed. Normally bound
- * to "C-J".
- */
 static int
 indent(int f, int n, int k)
 {
@@ -3992,21 +3102,12 @@ indent(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Delete forward. This is real
- * easy, because the basic delete routine does
- * all of the work. Watches for negative arguments,
- * and does the right thing. If any argument is
- * present, it kills rather than deletes, to prevent
- * loss of text if typed with a big argument.
- * Normally bound to "C-D".
- */
 static int
 forwdel(int f, int n, int k)
 {
 	if (n < 0)
 		return (backdel(f, -n, KRANDOM));
-	if (f != FALSE) {			/* Really a kill.	*/
+	if (f != FALSE) {
 		if ((lastflag&CFKILL) == 0)
 			kdelete();
 		thisflag |= CFKILL;
@@ -4014,13 +3115,6 @@ forwdel(int f, int n, int k)
 	return (ldelete(n, f));
 }
 
-/*
- * Delete backwards. This is quite easy too,
- * because it's all done with other functions. Just
- * move the cursor back, and delete forwards.
- * Like delete forward, this actually does a kill
- * if presented with an argument.
- */
 static int
 backdel(int f, int n, int k)
 {
@@ -4028,7 +3122,7 @@ backdel(int f, int n, int k)
 
 	if (n < 0)
 		return (forwdel(f, -n, KRANDOM));
-	if (f != FALSE) {			/* Really a kill.	*/
+	if (f != FALSE) {
 		if ((lastflag&CFKILL) == 0)
 			kdelete();
 		thisflag |= CFKILL;
@@ -4038,25 +3132,14 @@ backdel(int f, int n, int k)
 	return (s);
 }
 
-/*
- * Kill line. If called without an argument,
- * it kills from dot to the end of the line, unless it
- * is at the end of the line, when it kills the newline.
- * If called with an argument of 0, it kills from the
- * start of the line to dot. If called with a positive
- * argument, it kills from dot forward over that number
- * of newlines. If called with a negative argument it
- * kills any text before dot on the current line,
- * then it kills back abs(arg) lines.
- */
 static int
 killline(int f, int n, int k)
 {
 	register int	chunk;
 	register LINE	*nextp;
 
-	if ((lastflag&CFKILL) == 0)		/* Clear kill buffer if	*/
-		kdelete();			/* last wasn't a kill.	*/
+	if ((lastflag&CFKILL) == 0)
+		kdelete();
 	thisflag |= CFKILL;
 	if (f == FALSE) {
 		chunk = llength(curwp->w_dotp)-curwp->w_doto;
@@ -4071,7 +3154,7 @@ killline(int f, int n, int k)
 			chunk += llength(nextp)+1;
 			nextp = lforw(nextp);
 		}
-	} else {				/* n <= 0		*/
+	} else {
 		chunk = curwp->w_doto;
 		curwp->w_doto = 0;
 		while (n++) {
@@ -4085,21 +3168,6 @@ killline(int f, int n, int k)
 	return (ldelete(chunk, TRUE));
 }
 
-/*
- * Yank text back from the kill buffer. This
- * is really easy. All of the work is done by the
- * standard insert routines. All you do is run the loop,
- * and check for errors. The blank
- * lines are inserted with a call to "newline"
- * instead of a call to "lnewline" so that the magic
- * stuff that happens when you type a carriage
- * return also happens when a carriage return is
- * yanked back from the kill buffer.
- * An attempt has been made to fix the cosmetic bug
- * associated with a yank when dot is on the top line of
- * the window (nothing moves, because all of the new
- * text landed off screen).
- */
 static int
 yank(int f, int n, int k)
 {
@@ -4110,7 +3178,7 @@ yank(int f, int n, int k)
 
 	if (n < 0)
 		return (FALSE);
-	nline = 0;				/* Newline counting.	*/
+	nline = 0;
 	while (n--) {
 		i = 0;
 		while ((c=kremove(i)) >= 0) {
@@ -4125,22 +3193,16 @@ yank(int f, int n, int k)
 			++i;
 		}
 	}
-	lp = curwp->w_linep;			/* Cosmetic adjustment	*/
-	if (curwp->w_dotp == lp) {		/* if offscreen insert.	*/
+	lp = curwp->w_linep;
+	if (curwp->w_dotp == lp) {
 		while (nline-- && lback(lp)!=curbp->b_linep)
 			lp = lback(lp);
-		curwp->w_linep = lp;		/* Adjust framing.	*/
+		curwp->w_linep = lp;
 		curwp->w_flag |= WFHARD;
 	}
 	return (TRUE);
 }
-/*
- * Move the cursor backward by
- * "n" words. All of the details of motion
- * are performed by the "backchar" and "forwchar"
- * routines. Error if you try to move beyond
- * the buffers.
- */
+
 static int
 backword(int f, int n, int k)
 {
@@ -4161,12 +3223,6 @@ backword(int f, int n, int k)
 	return (forwchar(FALSE, 1, KRANDOM));
 }
 
-/*
- * Move the cursor forward by
- * the specified number of words. All of the
- * motion is done by "forwchar". Error if you
- * try and move beyond the buffer's end.
- */
 static int
 forwword(int f, int n, int k)
 {
@@ -4185,13 +3241,6 @@ forwword(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Move the cursor forward by
- * the specified number of words. As you move,
- * convert any characters to upper case. Error
- * if you try and move beyond the end of the
- * buffer.
- */
 static int
 upperword(int f, int n, int k)
 {
@@ -4218,12 +3267,6 @@ upperword(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Move the cursor forward by
- * the specified number of words. As you move
- * convert characters to lower case. Error if you
- * try and move over the end of the buffer.
- */
 static int
 lowerword(int f, int n, int k)
 {
@@ -4250,13 +3293,6 @@ lowerword(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Move the cursor forward by
- * the specified number of words. As you move
- * convert the first character of the word to upper
- * case, and subsequent characters to lower case. Error
- * if you try and move past the end of the buffer.
- */
 static int
 capword(int f, int n, int k)
 {
@@ -4293,13 +3329,6 @@ capword(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Kill forward by "n" words. The rules for final
- * status are now different. It is not considered an error
- * to delete fewer words than you asked. This lets you say
- * "kill lots of words" and have the command stop in a reasonable
- * way when it hits the end of the buffer. Normally this is
- */
 static int
 delfword(int f, int n, int k)
 {
@@ -4309,7 +3338,7 @@ delfword(int f, int n, int k)
 
 	if (n < 0)
 		return (FALSE);
-	if ((lastflag&CFKILL) == 0)		/* Purge kill buffer.	*/
+	if ((lastflag&CFKILL) == 0)
 		kdelete();
 	thisflag |= CFKILL;
 	dotp = curwp->w_dotp;
@@ -4318,12 +3347,12 @@ delfword(int f, int n, int k)
 	while (n--) {
 		while (inword() == FALSE) {
 			if (forwchar(FALSE, 1, KRANDOM) == FALSE)
-				goto out;	/* Hit end of buffer.	*/
+				goto out;
 			++size;
 		}
 		while (inword() != FALSE) {
 			if (forwchar(FALSE, 1, KRANDOM) == FALSE)
-				goto out;	/* Hit end of buffer.	*/
+				goto out;
 			++size;
 		}
 	}
@@ -4333,18 +3362,6 @@ out:
 	return (ldelete(size, TRUE));
 }
 
-/*
- * Kill backwards by "n" words. The rules
- * for success and failure are now different, to prevent
- * strange behavior at the start of the buffer. The command
- * only fails if something goes wrong with the actual delete
- * of the characters. It is successful even if no characters
- * are deleted, or if you say delete 5 words, and there are
- * only 4 words left. I considered making the first call
- * to "backchar" special, but decided that that would just
- * be wierd. Normally this is bound to "M-Rubout" and
- * to "M-Backspace".
- */
 static int
 delbword(int f, int n, int k)
 {
@@ -4352,37 +3369,31 @@ delbword(int f, int n, int k)
 
 	if (n < 0)
 		return (FALSE);
-	if ((lastflag&CFKILL) == 0)		/* Purge kill buffer.	*/
+	if ((lastflag&CFKILL) == 0)
 		kdelete();
 	thisflag |= CFKILL;
 	if (backchar(FALSE, 1, KRANDOM) == FALSE)
-		return (TRUE);			/* Hit buffer start.	*/
-	size = 1;				/* One deleted.		*/
+		return (TRUE);
+	size = 1;
 	while (n--) {
 		while (inword() == FALSE) {
 			if (backchar(FALSE, 1, KRANDOM) == FALSE)
-				goto out;	/* Hit buffer start.	*/
+				goto out;
 			++size;
 		}
 		while (inword() != FALSE) {
 			if (backchar(FALSE, 1, KRANDOM) == FALSE)
-				goto out;	/* Hit buffer start.	*/
+				goto out;
 			++size;
 		}
 	}
 	if (forwchar(FALSE, 1, KRANDOM) == FALSE)
 		return (FALSE);
-	--size;					/* Undo assumed delete.	*/
+	--size;
 out:
 	return (ldelete(size, TRUE));
 }
 
-/*
- * Return TRUE if the character at dot
- * is a character that is considered to be
- * part of a word. The word character list is hard
- * coded. Should be setable.
- */
 static int
 inword(void)
 {
@@ -4392,11 +3403,7 @@ inword(void)
 		return (TRUE);
 	return (FALSE);
 }
-/*
- * Kill the region. Ask "getregion"
- * to figure out the bounds of the region.
- * Move "." to the start, and kill the characters.
- */
+
 static int
 killregion(int f, int n, int k)
 {
@@ -4405,20 +3412,14 @@ killregion(int f, int n, int k)
 
 	if ((s=getregion(&region)) != TRUE)
 		return (s);
-	if ((lastflag&CFKILL) == 0)		/* This is a kill type	*/
-		kdelete();			/* command, so do magic	*/
-	thisflag |= CFKILL;			/* kill buffer stuff.	*/
+	if ((lastflag&CFKILL) == 0)
+		kdelete();
+	thisflag |= CFKILL;
 	curwp->w_dotp = region.r_linep;
 	curwp->w_doto = region.r_offset;
 	return (ldelete(region.r_size, TRUE));
 }
 
-/*
- * Copy all of the characters in the
- * region to the kill buffer. Don't move dot
- * at all. This is a bit like a kill region followed
- * by a yank.
- */
 static int
 copyregion(int f, int n, int k)
 {
@@ -4429,18 +3430,18 @@ copyregion(int f, int n, int k)
 
 	if ((s=getregion(&region)) != TRUE)
 		return (s);
-	if ((lastflag&CFKILL) == 0)		/* Kill type command.	*/
+	if ((lastflag&CFKILL) == 0)
 		kdelete();
 	thisflag |= CFKILL;
-	linep = region.r_linep;			/* Current line.	*/
-	loffs = region.r_offset;		/* Current offset.	*/
+	linep = region.r_linep;
+	loffs = region.r_offset;
 	while (region.r_size--) {
-		if (loffs == llength(linep)) {	/* End of line.		*/
+		if (loffs == llength(linep)) {
 			if ((s=kinsert('\n')) != TRUE)
 				return (s);
 			linep = lforw(linep);
 			loffs = 0;
-		} else {			/* Middle of line.	*/
+		} else {
 			if ((s=kinsert(lgetc(linep, loffs))) != TRUE)
 				return (s);
 			++loffs;
@@ -4449,13 +3450,6 @@ copyregion(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Lower case region. Zap all of the upper
- * case characters in the region to lower case. Use
- * the region code to set the limits. Scan the buffer,
- * doing the changes. Call "lchange" to ensure that
- * redisplay is done in all buffers. 
- */
 static int
 lowerregion(int f, int n, int k)
 {
@@ -4484,13 +3478,6 @@ lowerregion(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Upper case region. Zap all of the lower
- * case characters in the region to upper case. Use
- * the region code to set the limits. Scan the buffer,
- * doing the changes. Call "lchange" to ensure that
- * redisplay is done in all buffers. 
- */
 static int
 upperregion(int f, int n, int k)
 {
@@ -4519,32 +3506,19 @@ upperregion(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This routine figures out the bound of the region
- * in the current window, and stores the results into the fields
- * of the REGION structure. Dot and mark are usually close together,
- * but I don't know the order, so I scan outward from dot, in both
- * directions, looking for mark. The size is kept in a long. At the
- * end, after the size is figured out, it is assigned to the size
- * field of the region structure. If this assignment loses any bits,
- * then we print an error. This is "type independent" overflow
- * checking. All of the callers of this routine should be ready to
- * get an ABORT status, because I might add a "if regions is big,
- * ask before clobberring" flag.
- */
 static int
 getregion(REGION * rp)
 {
 	register LINE	*flp;
 	register LINE	*blp;
-	register long	fsize;			/* Long now.		*/
+	register long	fsize;
 	register long	bsize;
 
 	if (curwp->w_markp == NULL) {
 		eprintf("No mark in this window");
 		return (FALSE);
 	}
-	if (curwp->w_dotp == curwp->w_markp) {	/* "r_size" always ok.	*/
+	if (curwp->w_dotp == curwp->w_markp) {
 		rp->r_linep = curwp->w_dotp;
 		if (curwp->w_doto < curwp->w_marko) {
 			rp->r_offset = curwp->w_doto;
@@ -4555,7 +3529,7 @@ getregion(REGION * rp)
 		}
 		return (TRUE);
 	}
-	blp = curwp->w_dotp;			/* Get region size.	*/
+	blp = curwp->w_dotp;
 	flp = curwp->w_dotp;
 	bsize = curwp->w_doto;
 	fsize = llength(flp)-curwp->w_doto+1;
@@ -4579,13 +3553,10 @@ getregion(REGION * rp)
 			}
 		}
 	}
-	eprintf("Bug: lost mark");		/* Gak!			*/
+	eprintf("Bug: lost mark");
 	return (FALSE);
 }
 
-/*
- * Set size, and check for overflow.
- */
 static int
 setsize(REGION * rp, long size)
 {
@@ -4596,9 +3567,7 @@ setsize(REGION * rp, long size)
 	}
 	return (TRUE);
 }
-/*
- * Go to beginning of line.
- */
+
 static int
 gotobol(int f, int n, int k)
 {
@@ -4606,12 +3575,6 @@ gotobol(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Move cursor backwards. Do the
- * right thing if the count is less than
- * 0. Error if you try to move back from
- * the beginning of the buffer.
- */
 static int
 backchar(int f, int n, int k)
 {
@@ -4632,9 +3595,6 @@ backchar(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Go to end of line.
- */
 static int
 gotoeol(int f, int n, int k)
 {
@@ -4642,12 +3602,6 @@ gotoeol(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Move cursor forwards. Do the
- * right thing if the count is less than
- * 0. Error if you try to move forward
- * from the end of the buffer.
- */
 static int
 forwchar(int f, int n, int k)
 {
@@ -4666,11 +3620,6 @@ forwchar(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Go to the beginning of the
- * buffer. Setting WFHARD is conservative,
- * but almost always the case.
- */
 static int
 gotobob(int f, int n, int k)
 {
@@ -4680,11 +3629,6 @@ gotobob(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Go to the end of the buffer.
- * Setting WFHARD is conservative, but
- * almost always the case.
- */
 static int
 gotoeob(int f, int n, int k)
 {
@@ -4694,13 +3638,6 @@ gotoeob(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Move forward by full lines.
- * If the number of lines to move is less
- * than zero, call the backward line function to
- * actually do it. The last command controls how
- * the goal column is set.
- */
 static int
 forwline(int f, int n, int k)
 {
@@ -4708,7 +3645,7 @@ forwline(int f, int n, int k)
 
 	if (n < 0)
 		return (backline(f, -n, KRANDOM));
-	if ((lastflag&CFCPCN) == 0)		/* Fix goal.		*/
+	if ((lastflag&CFCPCN) == 0)
 		setgoal();
 	thisflag |= CFCPCN;
 	dlp = curwp->w_dotp;
@@ -4720,13 +3657,6 @@ forwline(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This function is like "forwline", but
- * goes backwards. The scheme is exactly the same.
- * Check for arguments that are less than zero and
- * call your alternate. Figure out the new line and
- * call "movedot" to perform the motion.
- */
 static int
 backline(int f, int n, int k)
 {
@@ -4734,7 +3664,7 @@ backline(int f, int n, int k)
 
 	if (n < 0)
 		return (forwline(f, -n, KRANDOM));
-	if ((lastflag&CFCPCN) == 0)		/* Fix goal.		*/
+	if ((lastflag&CFCPCN) == 0)
 		setgoal();
 	thisflag |= CFCPCN;
 	dlp = curwp->w_dotp;
@@ -4746,20 +3676,13 @@ backline(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Set the current goal column,
- * which is saved in the external variable "curgoal",
- * to the current cursor column. The column is never off
- * the edge of the screen; it's more like display then
- * show position.
- */
 static void
 setgoal(void)
 {
 	register int	c;
 	register int	i;
 
-	curgoal = 0;				/* Get the position.	*/
+	curgoal = 0;
 	for (i=0; i<curwp->w_doto; ++i) {
 		c = lgetc(curwp->w_dotp, i);
 		if (c == '\t')
@@ -4768,17 +3691,10 @@ setgoal(void)
 			++curgoal;
 		++curgoal;
 	}
-	if (curgoal >= ncol)			/* Chop to tty width.	*/
+	if (curgoal >= ncol)
 		curgoal = ncol-1;
 }
 
-/*
- * This routine looks at a line (pointed
- * to by the LINE pointer "dlp") and the current
- * vertical motion goal column (set by the "setgoal"
- * routine above) and returns the best offset to use
- * when a vertical motion is made into the line.
- */
 static int
 getgoal(LINE * dlp)
 {
@@ -4805,28 +3721,20 @@ getgoal(LINE * dlp)
 	return (dbo);
 }
 
-/*
- * Scroll forward by a specified number
- * of lines, or by a full page if no argument.
- * The "2" is the window overlap (this is the default
- * value from ITS EMACS). Because the top line in
- * the window is zapped, we have to do a hard
- * update and get it back.
- */
 static int
 forwpage(int f, int n, int k)
 {
 	register LINE	*lp;
 
 	if (f == FALSE) {
-		n = curwp->w_ntrows - 2;	/* Default scroll.	*/
-		if (n <= 0)			/* Forget the overlap	*/
-			n = 1;			/* if tiny window.	*/
+		n = curwp->w_ntrows - 2;
+		if (n <= 0)
+			n = 1;
 	} else if (n < 0)
 		return (backpage(f, -n, KRANDOM));
 #if	CVMVAS
-	else					/* Convert from pages	*/
-		n *= curwp->w_ntrows;		/* to lines.		*/
+	else
+		n *= curwp->w_ntrows;
 #endif
 	lp = curwp->w_linep;
 	while (n-- && lp!=curbp->b_linep)
@@ -4838,28 +3746,20 @@ forwpage(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This command is like "forwpage",
- * but it goes backwards. The "2", like above,
- * is the overlap between the two windows. The
- * value is from the ITS EMACS manual. The
- * hard update is done because the top line in
- * the window is zapped.
- */
 static int
 backpage(int f, int n, int k)
 {
 	register LINE	*lp;
 
 	if (f == FALSE) {
-		n = curwp->w_ntrows - 2;	/* Default scroll.	*/
-		if (n <= 0)			/* Don't blow up if the	*/
-			n = 1;			/* window is tiny.	*/
+		n = curwp->w_ntrows - 2;
+		if (n <= 0)
+			n = 1;
 	} else if (n < 0)
 		return (forwpage(f, -n, KRANDOM));
 #if	CVMVAS
-	else					/* Convert from pages	*/
-		n *= curwp->w_ntrows;		/* to lines.		*/
+	else
+		n *= curwp->w_ntrows;
 #endif
 	lp = curwp->w_linep;
 	while (n-- && lback(lp)!=curbp->b_linep)
@@ -4871,12 +3771,6 @@ backpage(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Set the mark in the current window
- * to the value of dot. A message is written to
- * the echo line unless we are running in a keyboard
- * macro, when it would be silly.
- */
 static int
 setmark(int f, int n, int k)
 {
@@ -4887,13 +3781,6 @@ setmark(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Swap the values of "dot" and "mark" in
- * the current window. This is pretty easy, because
- * all of the hard work gets done by the standard routine
- * that moves the mark about. The only possible
- * error is "no mark".
- */
 static int
 swapmark(int f, int n, int k)
 {
@@ -4914,13 +3801,6 @@ swapmark(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Go to a specific line, mostly for
- * looking up errors in C programs, which give the
- * error a line number. If an argument is present, then
- * it is the line number, else prompt for a line number
- * to use.
- */
 static int
 gotoline(int f, int n, int k)
 {
@@ -4937,7 +3817,7 @@ gotoline(int f, int n, int k)
 		eprintf("Bad line");
 		return (FALSE);
 	}
-	clp = lforw(curbp->b_linep);		/* "clp" is first line	*/
+	clp = lforw(curbp->b_linep);
 	while (n != 1) {
 		if (clp == curbp->b_linep) {
 			eprintf("Line number too large");
@@ -4953,7 +3833,7 @@ gotoline(int f, int n, int k)
 }
 #define CCHR(x)		((x)-'@')
 
-#define SRCH_BEGIN	(0)			/* Search sub-codes.	*/
+#define SRCH_BEGIN	(0)
 #define	SRCH_FORW	(-1)
 #define SRCH_BACK	(-2)
 #define SRCH_PREV	(-3)
@@ -4970,15 +3850,8 @@ typedef struct  {
 static	SRCHCOM	cmds[NSRCH];
 static	int	cip;
 
-static int	srch_lastdir = SRCH_NOPR;		/* Last search flags.	*/
+static int	srch_lastdir = SRCH_NOPR;
 
-/*
- * Search forward.
- * Get a search string from the user, and search for it,
- * starting at ".". If found, "." gets moved to just after the
- * matched characters, and display does all the hard stuff.
- * If not found, it just prints a message.
- */
 static int
 forwsearch(int f, int n, int k)
 {
@@ -4994,13 +3867,6 @@ forwsearch(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Reverse search.
- * Get a search string from the  user, and search, starting at "."
- * and proceeding toward the front of the buffer. If found "." is left
- * pointing at the first character of the pattern [the last character that
- * was matched].
- */
 static int
 backsearch(int f, int n, int k)
 {
@@ -5016,12 +3882,6 @@ backsearch(int f, int n, int k)
 	return (TRUE);
 }
 
-/* 
- * Search again, using the same search string
- * and direction as the last search command. The direction
- * has been saved in "srch_lastdir", so you know which way
- * to go.
- */
 static int
 searchagain(int f, int n, int k)
 {
@@ -5043,38 +3903,18 @@ searchagain(int f, int n, int k)
 	return (FALSE);
 }
 
-/*
- * Use incremental searching, initially in the forward direction.
- * isearch ignores any explicit arguments.
- */
 static int
 forwisearch(int f, int n, int k)
 {
 	return (isearch(SRCH_FORW));
 }
 
-/*
- * Use incremental searching, initially in the reverse direction.
- * isearch ignores any explicit arguments.
- */
 static int
 backisearch(int f, int n, int k)
 {
 	return (isearch(SRCH_BACK));
 }
 
-/*
- * Incremental Search.
- *	dir is used as the initial direction to search.
- *	^N	find next occurance  (if first thing typed reuse old string).
- *	^P	find prev occurance  (if first thing typed reuse old string).
- *	^S	switch direction to forward, find next
- *	^R	switch direction to reverse, find prev
- *	^Q	quote next character (allows searching for ^N etc.)
- *	<ESC>	exit from Isearch.
- *	<DEL>	undoes last character typed. (tricky job to do this correctly).
- *	else	accumulate into search string
- */
 static int
 isearch(int dir)
 {
@@ -5119,7 +3959,7 @@ isearch(int dir)
 				is_cpush(SRCH_FORW);
 				success = TRUE;
 			}
-			/* Drop through to find next. */
+
 		case CCHR('N'):
 			if (success==FALSE && dir==SRCH_FORW)
 				break;
@@ -5144,7 +3984,7 @@ isearch(int dir)
 				is_cpush(SRCH_BACK);
 				success = TRUE;
 			}
-			/* Drop through to find previous. */
+
 		case CCHR('P'):
 			if (success==FALSE && dir==SRCH_BACK)
 				break;
@@ -5184,7 +4024,7 @@ isearch(int dir)
 				success = execute(c, FALSE, 1);
 				curwp->w_flag |= WFMOVE;
 				return (success);
-			}				
+			}
 		addchar:
 			if (pptr == -1)
 				pptr = 0;
@@ -5238,7 +4078,7 @@ static void
 is_pop(void)
 {
 	if (cmds[cip].s_code != SRCH_NOPR) {
-		curwp->w_doto  = cmds[cip].s_doto; 
+		curwp->w_doto  = cmds[cip].s_doto;
 		curwp->w_dotp  = cmds[cip].s_dotp;
 		curwp->w_flag |= WFMOVE;
 		cmds[cip].s_code = SRCH_NOPR;
@@ -5316,14 +4156,6 @@ is_find(int dir)
 	return (FALSE);
 }
 
-/*
- * If called with "dir" not one of SRCH_FORW
- * or SRCH_BACK, this routine used to print an error
- * message. It also used to return TRUE or FALSE,
- * depending on if it liked the "dir". However, none
- * of the callers looked at the status, so I just
- * made the checking vanish.
- */
 static void
 is_prompt(int dir, int flag, int success)
 {
@@ -5340,11 +4172,6 @@ is_prompt(int dir, int flag, int success)
 	}
 }
 
-/*
- * Prompt writing routine for the incremental search. 
- * The "prompt" is just a string. The "flag" determines
- * if a "[ ]" or ":" embelishment is used.
- */
 static void
 is_dspl(char * prompt, int flag)
 {
@@ -5354,22 +4181,16 @@ is_dspl(char * prompt, int flag)
 		eprintf("%s: %s", prompt, pat);
 }
 
-/*
- * Query Replace.
- *	Replace strings selectively.  Does a search and replace operation.
- *	A space or a comma replaces the string, a period replaces and quits,
- *	an n doesn't replace, a C-G quits.
- */
 static int
 queryrepl(int f, int n, int k)
 {
 	register int	s;
-	char		news[NPAT];	/* replacement string		*/
-	register int	kludge;		/* Watch for saved line move	*/
-	LINE		*clp;		/* saved line pointer		*/
-	int		cbo;		/* offset into the saved line	*/
-	int		rcnt = 0;	/* Replacements made so far	*/
-	int		plen;		/* length of found string	*/
+	char		news[NPAT];
+	register int	kludge;
+	LINE		*clp;
+	int		cbo;
+	int		rcnt = 0;
+	int		plen;
 
 	if ((s=readpattern("Old string")) != TRUE)
 		return (s);
@@ -5380,24 +4201,7 @@ queryrepl(int f, int n, int k)
 	eprintf("Query Replace:  [%s] -> [%s]", pat, news);
 	plen = strlen(pat);
 
-	/*
-	 * Search forward repeatedly, checking each time whether to insert
-	 * or not.  The "!" case makes the check always true, so it gets put
-	 * into a tighter loop for efficiency.
-	 *
-	 * If we change the line that is the remembered value of dot, then
-	 * it is possible for the remembered value to move.  This causes great
-	 * pain when trying to return to the non-existant line.
-	 *
-	 * possible fixes:
-	 * 1) put a single, relocated marker in the WINDOW structure, handled
-	 *    like mark.  The problem now becomes a what if two are needed...
-	 * 2) link markers into a list that gets updated (auto structures for
-	 *    the nodes)
-	 * 3) Expand the mark into a stack of marks and add pushmark, popmark.
-	 */
-
-	clp = curwp->w_dotp;		/* save the return location	*/
+	clp = curwp->w_dotp;
 	cbo = curwp->w_doto;
 	while (forwsrch() == TRUE) {
 	retry:
@@ -5459,13 +4263,6 @@ stopsearch:
 	return (TRUE);
 }
 
-/*
- * This routine does the real work of a
- * forward search. The pattern is sitting in the external
- * variable "pat". If found, dot is updated, the window system
- * is notified of the change, and TRUE is returned. If the
- * string isn't found, FALSE is returned.
- */
 static int
 forwsrch(void)
 {
@@ -5513,13 +4310,6 @@ forwsrch(void)
 	return (FALSE);
 }
 
-/*
- * This routine does the real work of a
- * backward search. The pattern is sitting in the external
- * variable "pat". If found, dot is updated, the window system
- * is notified of the change, and TRUE is returned. If the
- * string isn't found, FALSE is returned.
- */
 static int
 backsrch(void)
 {
@@ -5573,12 +4363,6 @@ backsrch(void)
 	}
 }
 
-/*
- * Compare two characters.
- * The "bc" comes from the buffer.
- * It has its case folded out. The
- * "pc" is from the pattern.
- */
 static int
 eq(int bc, int pc)
 {
@@ -5596,14 +4380,6 @@ eq(int bc, int pc)
 	return (FALSE);
 }
 
-/*
- * Read a pattern.
- * Stash it in the external variable "pat". The "pat" is
- * not updated if the user types in an empty line. If the user typed
- * an empty line, and there is no old pattern, it is an error.
- * Display the old pattern, in the style of Jeff Lomicka. There is
- * some do-it-yourself control expansion.
- */
 static int
 readpattern(char * prompt)
 {
@@ -5611,43 +4387,32 @@ readpattern(char * prompt)
 	char		tpat[NPAT];
 
 	s = ereply("%s [%s]: ", tpat, NPAT, prompt, pat);
-	if (s == TRUE)				/* Specified		*/
+	if (s == TRUE)
 		strcpy(pat, tpat);
-	else if (s==FALSE && pat[0]!=0)		/* CR, but old one	*/
+	else if (s==FALSE && pat[0]!=0)
 		s = TRUE;
 	return (s);
 }
-/*
- * Read in a key, doing the terminal
- * independent prefix handling. The terminal specific
- * "getkbd" routine gets the first swing, and may return
- * one of the special codes used by the special keys
- * on the keyboard. The "getkbd" routine returns the
- * C0 controls as received; this routine moves them to
- * the right spot in 11 bit code.
- */
+
 static int
 getkey(void)
 {
 	register int	c;
 
 	c = getkbd();
-	if (c == METACH)			/* M-			*/
+	if (c == METACH)
 		c = KMETA | getctl();
-	else if (c == CTRLCH)			/* C-			*/
+	else if (c == CTRLCH)
 		c = KCTRL | getctl();
-	else if (c == CTMECH)			/* C-M-			*/
+	else if (c == CTMECH)
 		c = KCTRL | KMETA | getctl();
-	else if (c>=0x00 && c<=0x1F)		/* Relocate control.	*/
+	else if (c>=0x00 && c<=0x1F)
 		c = KCTRL | (c+'@');
-	if (c == (KCTRL|'X'))			/* C-X			*/
+	if (c == (KCTRL|'X'))
 		c = KCTLX | getctl();
 	return (c);
 }
 
-/*
- * Used above.
- */
 static int
 getctl(void)
 {
@@ -5656,18 +4421,11 @@ getctl(void)
 	c = ttgetc();
 	if (ISLOWER(c) != FALSE)
 		c = TOUPPER(c);
-	if (c>=0x00 && c<=0x1F)			/* Relocate control.	*/
+	if (c>=0x00 && c<=0x1F)
 		c = KCTRL | (c+'@');
 	return (c);
 }
 
-/*
- * Transform a key code into a name,
- * using a table for the special keys and combination
- * of some hard code and some general processing for
- * the rest. None of this code is terminal specific any
- * more. This makes adding keys easier.
- */
 static void
 keyname(char * cp, int k)
 {
@@ -5681,7 +4439,7 @@ keyname(char * cp, int k)
 		'C',	'D',	'E',	'F'
 	};
 
-	if ((k&KCTLX) != 0) {			/* C-X prefix.		*/
+	if ((k&KCTLX) != 0) {
 		*cp++ = 'C';
 		*cp++ = '-';
 		*cp++ = 'X';
@@ -5702,7 +4460,7 @@ keyname(char * cp, int k)
 			return;
 		}
 	}
-	if ((k&~KMETA) == (KCTRL|'I'))		/* Some specials.	*/
+	if ((k&~KMETA) == (KCTRL|'I'))
 		np = "Tab";
 	else if ((k&~KMETA) == (KCTRL|'M'))
 		np = "Return";
@@ -5713,35 +4471,28 @@ keyname(char * cp, int k)
 	else if ((k&~KMETA) == 0x7F)
 		np = "Rubout";
 	else {
-		if ((k&KCTRL) != 0) {		/* Add C- mark.		*/
+		if ((k&KCTRL) != 0) {
 			*cp++ = 'C';
 			*cp++ = '-';
 		}
 		np = &nbuf[0];
 		if (((k&KCHAR)>=0x20 && (k&KCHAR)<=0x7E)
 		||  ((k&KCHAR)>=0xA0 && (k&KCHAR)<=0xFE)) {
-			nbuf[0] = k&KCHAR;	/* Graphic.		*/
+			nbuf[0] = k&KCHAR;
 			nbuf[1] = 0;
-		} else {			/* Non graphic.		*/
+		} else {
 			nbuf[0] = hex[(k>>4)&0x0F];
 			nbuf[1] = hex[k&0x0F];
 			nbuf[2] = 0;
 		}
 	}
-	if ((k&KMETA) != 0) {			/* Add M- mark.		*/
+	if ((k&KMETA) != 0) {
 		*cp++ = 'M';
 		*cp++ = '-';
 	}
 	strcpy(cp, np);
 }
-/*
- * This function modifies the keyboard
- * binding table, by adjusting the entries in the
- * big "bindings" array. Most of the grief deals with the
- * prompting for additional arguments. This code does not
- * work right if there is a keyboard macro floating around.
- * Should be fixed.
- */
+
 static int
 bindtokey(int f, int n, int k)
 {
@@ -5767,24 +4518,17 @@ bindtokey(int f, int n, int k)
 	eputc(':');
 	eputc(' ');
 	ttflush();
-	c = getkey();				/* Read key.		*/
-	keyname(xname, c);			/* Display keyname.	*/
+	c = getkey();
+	keyname(xname, c);
 	eputs(xname);
 	ttflush();
-	if (binding[c] != NULL)			/* Unbind old, and	*/
+	if (binding[c] != NULL)
 		--binding[c]->s_nkey;
-	binding[c] = sp;			/* rebind new.		*/
+	binding[c] = sp;
 	++sp->s_nkey;
 	return (TRUE);
 }
- 
-/*
- * Extended command. Call the message line
- * routine to read in the command name and apply autocompletion
- * to it. When it comes back, look the name up in the symbol table
- * and run the command if it is found and has the right type.
- * Print an error if there is anything wrong.
- */
+
 static int
 extend(int f, int n, int k)
 {
@@ -5800,14 +4544,6 @@ extend(int f, int n, int k)
 	return (ABORT);
 }
 
-/*
- * Read a key from the keyboard, and look it
- * up in the binding table. Display the name of the function
- * currently bound to the key. Say that the key is not bound
- * if it is indeed not bound, or if the type is not a
- * "builtin". This is a bit of overkill, because this is the
- * only kind of function there is.
- */
 static int
 help(int f, int n, int k)
 {
@@ -5824,14 +4560,6 @@ help(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * This function creates a table, listing all
- * of the command keys and their current bindings, and stores
- * the table in the standard pop-op buffer (the one used by the
- * directory list command, the buffer list command, etc.). This
- * lets e produce it's own wall chart. The bindings to
- * "ins-self" are only displayed if there is an argument.
- */
 static int
 wallchart(int f, int n, int k)
 {
@@ -5842,20 +4570,20 @@ wallchart(int f, int n, int k)
 	register char	*cp2;
 	char		buf[64];
 
-	if ((s=bclear(blistp)) != TRUE)		/* Clear it out.	*/
+	if ((s=bclear(blistp)) != TRUE)
 		return (s);
 	(void) strcpy(blistp->b_fname, "");
-	for (key=0; key<NKEYS; ++key) {		/* For all keys.	*/
+	for (key=0; key<NKEYS; ++key) {
 		sp = binding[key];
 		if (sp != NULL
 		&& (f!=FALSE || strcmp(sp->s_name, "ins-self")!=0)) {
 			keyname(buf, key);
-			cp1 = &buf[0];		/* Find end.		*/
+			cp1 = &buf[0];
 			while (*cp1 != 0)
 				++cp1;
-			while (cp1 < &buf[16])	/* Goto column 16.	*/
-				*cp1++ = ' ';				
-			cp2 = sp->s_name;	/* Add function name.	*/
+			while (cp1 < &buf[16])
+				*cp1++ = ' ';
+			cp2 = sp->s_name;
 			while ((*cp1++ = *cp2++))
 				;
 			if (addline(buf) == FALSE)
@@ -5864,89 +4592,49 @@ wallchart(int f, int n, int k)
 	}
 	return (popblist());
 }
-/*
- * You can change these back to the types
- * implied by the name if you get tight for space. If you
- * make both of them "int" you get better code on the VAX.
- * They do nothing if this is not Gosling redisplay, except
- * for change the size of a structure that isn't used.
- * A bit of a cheat.
- */
+
 #define	XCHAR	int
 #define	XSHORT	int
 
-/*
- * A video structure always holds
- * an array of characters whose length is equal to
- * the longest line possible. Only some of this is
- * used if "ncol" isn't the same as "NCOL".
- */
 typedef	struct	{
-	short	v_hash;			/* Hash code, for compares.	*/
-	short	v_flag;			/* Flag word.			*/
-	short	v_color;		/* Color of the line.		*/
-	XSHORT	v_cost;			/* Cost of display.		*/
-	char	v_text[NCOL];		/* The actual characters.	*/
+	short	v_hash;
+	short	v_flag;
+	short	v_color;
+	XSHORT	v_cost;
+	char	v_text[NCOL];
 }	VIDEO;
 
-
-/* Forward declarations for VIDEO functions */
 static void	hash(VIDEO *);
 static void	uline(int, VIDEO *, VIDEO *);
 static void	ucopy(VIDEO *, VIDEO *);
-#define	VFCHG	0x0001			/* Changed.			*/
-#define	VFHBAD	0x0002			/* Hash and cost are bad.	*/
+#define	VFCHG	0x0001
+#define	VFHBAD	0x0002
 
-/*
- * SCORE structures hold the optimal
- * trace trajectory, and the cost of redisplay, when
- * the dynamic programming redisplay code is used.
- * If no fancy redisplay, this isn't used. The trace index
- * fields can be "char", and the score a "short", but
- * this makes the code worse on the VAX.
- */
 typedef	struct	{
-	XCHAR	s_itrace;		/* "i" index for track back.	*/
-	XCHAR	s_jtrace;		/* "j" index for trace back.	*/
-	XSHORT	s_cost;			/* Display cost.		*/
+	XCHAR	s_itrace;
+	XCHAR	s_jtrace;
+	XSHORT	s_cost;
 }	SCORE;
 
-int	sgarbf	= TRUE;			/* TRUE if screen is garbage.	*/
-int	vtrow	= 0;			/* Virtual cursor row.		*/
-int	vtcol	= 0;			/* Virtual cursor column.	*/
-int	tthue	= CNONE;		/* Current color.		*/
-int	ttrow	= HUGE;			/* Physical cursor row.		*/
-int	ttcol	= HUGE;			/* Physical cursor column.	*/
-int	tttop	= HUGE;			/* Top of scroll region.	*/
-int	ttbot	= HUGE;			/* Bottom of scroll region.	*/
+int	sgarbf	= TRUE;
+int	vtrow	= 0;
+int	vtcol	= 0;
+int	tthue	= CNONE;
+int	ttrow	= HUGE;
+int	ttcol	= HUGE;
+int	tttop	= HUGE;
+int	ttbot	= HUGE;
 
-static VIDEO	*vscreen[NROW-1];		/* Edge vector, virtual.	*/
-static VIDEO	*pscreen[NROW-1];		/* Edge vector, physical.	*/
-static VIDEO	video[2*(NROW-1)];		/* Actual screen data.		*/
-static VIDEO	blanks;				/* Blank line image.		*/
+static VIDEO	*vscreen[NROW-1];
+static VIDEO	*pscreen[NROW-1];
+static VIDEO	video[2*(NROW-1)];
+static VIDEO	blanks;
 
 #if	GOSLING
-/*
- * This matrix is written as an array because
- * we do funny things in the "setscores" routine, which
- * is very compute intensive, to make the subscripts go away.
- * It would be "SCORE	score[NROW][NROW]" in old speak.
- * Look at "setscores" to understand what is up.
- */
+
 static SCORE	score[NROW*NROW];
 #endif
 
-/*
- * Initialize the data structures used
- * by the display code. The edge vectors used
- * to access the screens are set up. The operating
- * system's terminal I/O channel is set up. Fill the
- * "blanks" array with ASCII blanks. The rest is done
- * at compile time. The original window is marked
- * as needing full update, and the physical screen
- * is marked as garbage, so all the right stuff happens
- * on the first call to redisplay.
- */
 static void
 vtinit(void)
 {
@@ -5967,32 +4655,18 @@ vtinit(void)
 		blanks.v_text[i] = ' ';
 }
 
-/*
- * Tidy up the virtual display system
- * in anticipation of a return back to the host
- * operating system. Right now all we do is position
- * the cursor to the last line, erase the line, and
- * close the terminal channel.
- */
 static void
 vttidy(void)
 {
 	ttcolor(CTEXT);
-	ttnowindow();				/* No scroll window.	*/
-	ttmove(nrow-1, 0);			/* Echo line.		*/
+	ttnowindow();
+	ttmove(nrow-1, 0);
 	tteeol();
 	tttidy();
 	ttflush();
 	ttclose();
 }
 
-/*
- * Move the virtual cursor to an origin
- * 0 spot on the virtual display screen. I could
- * store the column as a character pointer to the spot
- * on the line, which would make "vtputc" a little bit
- * more efficient. No checking for errors.
- */
 static void
 vtmove(int row, int col)
 {
@@ -6000,18 +4674,6 @@ vtmove(int row, int col)
 	vtcol = col;
 }
 
-/*
- * Write a character to the virtual display,
- * dealing with long lines and the display of unprintable
- * things like control characters. Also expand tabs every 8
- * columns. This code only puts printing characters into 
- * the virtual display image. Special care must be taken when
- * expanding tabs. On a screen whose width is not a multiple
- * of 8, it is possible for the virtual cursor to hit the
- * right margin before the next tab stop is reached. This
- * makes the tab code loop if you are not careful.
- * Three guesses how we found this.
- */
 static void
 vtputc(int c)
 {
@@ -6029,17 +4691,9 @@ vtputc(int c)
 		vtputc('^');
 		vtputc(c ^ 0x40);
 	} else
-		vp->v_text[vtcol++] = c;		
+		vp->v_text[vtcol++] = c;
 }
 
-/*
- * Erase from the end of the
- * software cursor to the end of the
- * line on which the software cursor is
- * located. The display routines will decide
- * if a hardware erase to end of line command
- * should be used to display this.
- */
 static void
 vteeol(void)
 {
@@ -6054,15 +4708,6 @@ vteeol(void)
 		vp->v_text[ncol-2]=thumb?'|':' ';vp->v_text[ncol-1]=thumb?'|':' ';}
 }
 
-/*
- * Make sure that the display is
- * right. This is a three part process. First,
- * scan through all of the windows looking for dirty
- * ones. Check the framing, and refresh the screen.
- * Second, make sure that "currow" and "curcol" are
- * correct for the current window. Third, make the
- * virtual and physical screens the same.
- */
 static void
 update(void)
 {
@@ -6082,18 +4727,18 @@ update(void)
 	if (curmsgf!=FALSE || newmsgf!=FALSE) {
 		wp = wheadp;
 		while (wp != NULL) {
-			wp->w_flag |= WFMODE;	/* Must do mode lines.	*/
+			wp->w_flag |= WFMODE;
 			wp = wp->w_wndp;
 		}
 	}
-	curmsgf = newmsgf;			/* Sync. up right now.	*/
-	hflag = FALSE;				/* Not hard.		*/
+	curmsgf = newmsgf;
+	hflag = FALSE;
 	{int t=0,a=0,h;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
 	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+h/6;if(sb_bot<sb_top+2)sb_bot=sb_top+2;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;}
 	{int _i=0,_c=0;while(_i<curwp->w_doto){if(lgetc(curwp->w_dotp,_i)=='\t')_c|=7;_i++;_c++;}hoff=_c>ncol-4?_c-ncol+8:0;}
 	wp = wheadp;
 	while (wp != NULL) {
-		if (wp->w_flag != 0) {		/* Need update.		*/
+		if (wp->w_flag != 0) {
 			if ((wp->w_flag&WFFORCE) == 0) {
 				lp = wp->w_linep;
 				for (i=0; i<wp->w_ntrows; ++i) {
@@ -6104,7 +4749,7 @@ update(void)
 					lp = lforw(lp);
 				}
 			}
-			i = wp->w_force;	/* Reframe this one.	*/
+			i = wp->w_force;
 			if (i > 0) {
 				--i;
 				if (i >= wp->w_ntrows)
@@ -6121,9 +4766,9 @@ update(void)
 				lp = lback(lp);
 			}
 			wp->w_linep = lp;
-			wp->w_flag |= WFHARD;	/* Force full.		*/
+			wp->w_flag |= WFHARD;
 		out:
-			lp = wp->w_linep;	/* Try reduced update.	*/
+			lp = wp->w_linep;
 			i  = wp->w_toprow;
 			if ((wp->w_flag&~WFMODE) == WFEDIT) {
 				while (lp != wp->w_dotp) {
@@ -6155,10 +4800,10 @@ update(void)
 				modeline(wp);
 			wp->w_flag  = 0;
 			wp->w_force = 0;
-		}		
+		}
 		wp = wp->w_wndp;
 	}
-	lp = curwp->w_linep;			/* Cursor location.	*/
+	lp = curwp->w_linep;
 	currow = curwp->w_toprow;
 	while (lp != curwp->w_dotp) {
 		++currow;
@@ -6175,14 +4820,14 @@ update(void)
 		++curcol;
 	}
 	curcol-=hoff;
-	if (curcol >= ncol)			/* Long line.		*/
+	if (curcol >= ncol)
 		curcol = ncol-1;
-	if (sgarbf != FALSE) {			/* Screen is garbage.	*/
-		sgarbf = FALSE;			/* Erase-page clears	*/
-		epresf = FALSE;			/* the message area.	*/
-		tttop  = HUGE;			/* Forget where you set	*/
-		ttbot  = HUGE;			/* scroll region.	*/
-		tthue  = CNONE;			/* Color unknown.	*/
+	if (sgarbf != FALSE) {
+		sgarbf = FALSE;
+		epresf = FALSE;
+		tttop  = HUGE;
+		ttbot  = HUGE;
+		tthue  = CNONE;
 		ttmove(0, 0);
 		tteeop();
 		for (i=0; i<nrow-1; ++i) {
@@ -6194,12 +4839,12 @@ update(void)
 		return;
 	}
 #if	GOSLING
-	if (hflag != FALSE) {			/* Hard update?		*/
-		for (i=0; i<nrow-1; ++i) {	/* Compute hash data.	*/
+	if (hflag != FALSE) {
+		for (i=0; i<nrow-1; ++i) {
 			hash(vscreen[i]);
 			hash(pscreen[i]);
 		}
-		offs = 0;			/* Get top match.	*/
+		offs = 0;
 		while (offs != nrow-1) {
 			vp1 = vscreen[offs];
 			vp2 = pscreen[offs];
@@ -6210,12 +4855,12 @@ update(void)
 			ucopy(vp1, vp2);
 			++offs;
 		}
-		if (offs == nrow-1) {		/* Might get it all.	*/
+		if (offs == nrow-1) {
 			ttmove(currow, curcol);
 			ttflush();
 			return;
 		}
-		size = nrow-1;			/* Get bottom match.	*/
+		size = nrow-1;
 		while (size != offs) {
 			vp1 = vscreen[size-1];
 			vp2 = pscreen[size-1];
@@ -6226,18 +4871,18 @@ update(void)
 			ucopy(vp1, vp2);
 			--size;
 		}
-		if ((size -= offs) == 0)	/* Get screen size.	*/
+		if ((size -= offs) == 0)
 			abort();
-		setscores(offs, size);		/* Do hard update.	*/
+		setscores(offs, size);
 		traceback(offs, size, size, size);
 		for (i=0; i<size; ++i)
 			ucopy(vscreen[offs+i], pscreen[offs+i]);
 		ttmove(currow, curcol);
 		ttflush();
-		return;			
+		return;
 	}
 #endif
-	for (i=0; i<nrow-1; ++i) {		/* Easy update.		*/
+	for (i=0; i<nrow-1; ++i) {
 		vp1 = vscreen[i];
 		vp2 = pscreen[i];
 		if ((vp1->v_flag&VFCHG) != 0) {
@@ -6249,21 +4894,13 @@ update(void)
 	ttflush();
 }
 
-/*
- * Update a saved copy of a line,
- * kept in a VIDEO structure. The "vvp" is
- * the one in the "vscreen". The "pvp" is the one
- * in the "pscreen". This is called to make the
- * virtual and physical screens the same when
- * display has done an update.
- */
 static void
 ucopy(VIDEO * vvp, VIDEO * pvp)
 {
 	register int	i;
 
-	vvp->v_flag &= ~VFCHG;			/* Changes done.	*/
-	pvp->v_flag  = vvp->v_flag;		/* Update model.	*/
+	vvp->v_flag &= ~VFCHG;
+	pvp->v_flag  = vvp->v_flag;
 	pvp->v_hash  = vvp->v_hash;
 	pvp->v_cost  = vvp->v_cost;
 	pvp->v_color = vvp->v_color;
@@ -6271,21 +4908,9 @@ ucopy(VIDEO * vvp, VIDEO * pvp)
 		pvp->v_text[i] = vvp->v_text[i];
 }
 
-/*
- * Update a single line. This routine only
- * uses basic functionality (no insert and delete character,
- * but erase to end of line). The "vvp" points at the VIDEO
- * structure for the line on the virtual screen, and the "pvp"
- * is the same for the physical screen. Avoid erase to end of
- * line when updating CMODE color lines, because of the way that
- * reverse video works on most terminals.
- */
 static void
 uline(int row, VIDEO * vvp, VIDEO * pvp)
 {
-#if	MEMMAP
-	putline(row+1, 1, &vvp->v_text[0]);
-#else
 	register char	*cp1;
 	register char	*cp2;
 	register char	*cp3;
@@ -6293,8 +4918,8 @@ uline(int row, VIDEO * vvp, VIDEO * pvp)
 	register char	*cp5;
 	register int	nbflag;
 
-	if (vvp->v_color != pvp->v_color) {	/* Wrong color, do a	*/
-		ttmove(row, 0);			/* full redraw.		*/
+	if (vvp->v_color != pvp->v_color) {
+		ttmove(row, 0);
 		ttcolor(vvp->v_color);
 		cp1 = &vvp->v_text[0];
 		cp2 = &vvp->v_text[ncol];
@@ -6304,52 +4929,42 @@ uline(int row, VIDEO * vvp, VIDEO * pvp)
 		}
 		return;
 	}
-	cp1 = &vvp->v_text[0];			/* Compute left match.	*/
+	cp1 = &vvp->v_text[0];
 	cp2 = &pvp->v_text[0];
 	while (cp1!=&vvp->v_text[ncol] && cp1[0]==cp2[0]) {
 		++cp1;
 		++cp2;
 	}
-	if (cp1 == &vvp->v_text[ncol])		/* All equal.		*/
+	if (cp1 == &vvp->v_text[ncol])
 		return;
 	nbflag = FALSE;
-	cp3 = &vvp->v_text[ncol];		/* Compute right match.	*/
+	cp3 = &vvp->v_text[ncol];
 	cp4 = &pvp->v_text[ncol];
 	while (cp3[-1] == cp4[-1]) {
 		--cp3;
 		--cp4;
-		if (cp3[0] != ' ')		/* Note non-blanks in	*/
-			nbflag = TRUE;		/* the right match.	*/
+		if (cp3[0] != ' ')
+			nbflag = TRUE;
 	}
-	cp5 = cp3;				/* Is erase good?	*/
+	cp5 = cp3;
 	if (nbflag==FALSE && vvp->v_color==CTEXT) {
 		while (cp5!=cp1 && cp5[-1]==' ')
 			--cp5;
-		/* Alcyon hack */
+
 		if ((int)(cp3-cp5) <= tceeol)
 			cp5 = cp3;
 	}
-	/* Alcyon hack */
+
 	ttmove(row, (int)(cp1-&vvp->v_text[0]));
 	ttcolor(vvp->v_color);
 	while (cp1 != cp5) {
 		ttputc(*cp1++);
 		++ttcol;
 	}
-	if (cp5 != cp3)				/* Do erase.		*/
+	if (cp5 != cp3)
 		tteeol();
-#endif
 }
 
-/*
- * Redisplay the mode line for
- * the window pointed to by the "wp".
- * This is the only routine that has any idea
- * of how the modeline is formatted. You can
- * change the modeline format by hacking at
- * this routine. Called by "update" any time
- * there is a dirty window.
- */
 static void
 modeline(WINDOW * wp)
 {
@@ -6358,17 +4973,17 @@ modeline(WINDOW * wp)
 	register int	n;
 	register BUFFER	*bp;
 
-	n = wp->w_toprow+wp->w_ntrows;		/* Location.		*/
-	vscreen[n]->v_color = CMODE;		/* Mode line color.	*/
-	vscreen[n]->v_flag |= (VFCHG|VFHBAD);	/* Recompute, display.	*/
-	vtmove(n, 0);				/* Seek to right line.	*/
+	n = wp->w_toprow+wp->w_ntrows;
+	vscreen[n]->v_color = CMODE;
+	vscreen[n]->v_flag |= (VFCHG|VFHBAD);
+	vtmove(n, 0);
 	bp = wp->w_bufp;
-	if ((bp->b_flag&BFCHG) != 0)		/* "*" if changed.	*/
+	if ((bp->b_flag&BFCHG) != 0)
 		vtputc('*');
 	else
 		vtputc(' ');
 	n  = 1;
-	cp = "e";				/* Buffer name.		*/
+	cp = "e";
 	while ((c = *cp++) != 0) {
 		vtputc(c);
 		++n;
@@ -6382,7 +4997,7 @@ modeline(WINDOW * wp)
 			++n;
 		}
 	}
-	if (bp->b_fname[0] != 0) {		/* File name.		*/
+	if (bp->b_fname[0] != 0) {
 		vtputc(' ');
 		++n;
 		cp = "File:";
@@ -6396,84 +5011,49 @@ modeline(WINDOW * wp)
 			++n;
 		}
 	}
-	if (curmsgf != FALSE			/* Message alert.	*/
+	if (curmsgf != FALSE
 	&& wp->w_wndp == NULL) {
 		while (n < ncol-5-1) {
 			vtputc(' ');
 			++n;
 		}
-		cp = "[Msg]";			/* Sizeof("[Msg]") = 5.	*/
+		cp = "[Msg]";
 		while ((c = *cp++) != 0) {
 			vtputc(c);
 			++n;
 		}
 	}
-	while (n < ncol) {			/* Pad out.		*/
+	while (n < ncol) {
 		vtputc(' ');
 		++n;
 	}
 }
 
 #if	GOSLING
-/*
- * Compute the hash code for
- * the line pointed to by the "vp". Recompute
- * it if necessary. Also set the approximate redisplay
- * cost. The validity of the hash code is marked by
- * a flag bit. The cost understand the advantages
- * of erase to end of line. Tuned for the VAX
- * by Bob McNamara; better than it used to be on
- * just about any machine.
- */
+
 static void
 hash(VIDEO * vp)
 {
 	register int	i;
 	register int	n;
 	register char	*s;
- 
-	if ((vp->v_flag&VFHBAD) != 0) {		/* Hash bad.		*/
+
+	if ((vp->v_flag&VFHBAD) != 0) {
 		s = &vp->v_text[ncol-1];
 		for (i=ncol; i!=0; --i, --s)
 			if (*s != ' ')
 				break;
-		n = ncol-i;			/* Erase cheaper?	*/
+		n = ncol-i;
 		if (n > tceeol)
 			n = tceeol;
-		vp->v_cost = i+n;		/* Bytes + blanks.	*/
+		vp->v_cost = i+n;
 		for (n=0; i!=0; --i, --s)
 			n = (n<<5) + n + *s;
-		vp->v_hash = n;			/* Hash code.		*/
-		vp->v_flag &= ~VFHBAD;		/* Flag as all done.	*/
+		vp->v_hash = n;
+		vp->v_flag &= ~VFHBAD;
 	}
 }
 
-/*
- * Compute the Insert-Delete
- * cost matrix. The dynamic programming algorithm
- * described by James Gosling is used. This code assumes
- * that the line above the echo line is the last line involved
- * in the scroll region. This is easy to arrange on the VT100
- * because of the scrolling region. The "offs" is the origin 0
- * offset of the first row in the virtual/physical screen that
- * is being updated; the "size" is the length of the chunk of
- * screen being updated. For a full screen update, use offs=0
- * and size=nrow-1.
- *
- * Older versions of this code implemented the score matrix by
- * a two dimensional array of SCORE nodes. This put all kinds of
- * multiply instructions in the code! This version is written to
- * use a linear array and pointers, and contains no multiplication
- * at all. The code has been carefully looked at on the VAX, with
- * only marginal checking on other machines for efficiency. In
- * fact, this has been tuned twice! Bob McNamara tuned it even
- * more for the VAX, which is a big issue for him because of
- * the 66 line X displays.
- *
- * On some machines, replacing the "for (i=1; i<=size; ++i)" with
- * i = 1; do { } while (++i <=size)" will make the code quite a
- * bit better; but it looks ugly.
- */
 static void
 setscores(int offs, int size)
 {
@@ -6487,13 +5067,13 @@ setscores(int offs, int size)
 	register SCORE	*sp1;
 	register VIDEO	**vbase;
 	register VIDEO	**pbase;
- 
-	vbase = &vscreen[offs-1];		/* By hand CSE's.	*/
+
+	vbase = &vscreen[offs-1];
 	pbase = &pscreen[offs-1];
-	score[0].s_itrace = 0;			/* [0, 0]		*/
+	score[0].s_itrace = 0;
 	score[0].s_jtrace = 0;
 	score[0].s_cost   = 0;
-	sp = &score[1];				/* Row 0, inserts.	*/
+	sp = &score[1];
 	tempcost = 0;
 	vp = &vbase[1];
 	for (j=1; j<=size; ++j) {
@@ -6505,7 +5085,7 @@ setscores(int offs, int size)
 		++vp;
 		++sp;
 	}
-	sp = &score[NROW];			/* Column 0, deletes.	*/
+	sp = &score[NROW];
 	tempcost = 0;
 	for (i=1; i<=size; ++i) {
 		sp->s_itrace = i-1;
@@ -6514,7 +5094,7 @@ setscores(int offs, int size)
 		sp->s_cost = tempcost;
 		sp += NROW;
 	}
-	sp1 = &score[NROW+1];			/* [1, 1].		*/
+	sp1 = &score[NROW+1];
 	pp = &pbase[1];
 	for (i=1; i<=size; ++i) {
 		sp = sp1;
@@ -6523,11 +5103,11 @@ setscores(int offs, int size)
 			sp->s_itrace = i-1;
 			sp->s_jtrace = j;
 			bestcost = (sp-NROW)->s_cost;
-			if (j != size)		/* Cd(A[i])=0 @ Dis.	*/
+			if (j != size)
 				bestcost += tcdell;
 			tempcost = (sp-1)->s_cost;
 			tempcost += (*vp)->v_cost;
-			if (i != size)		/* Ci(B[j])=0 @ Dsj.	*/
+			if (i != size)
 				tempcost += tcinsl;
 			if (tempcost < bestcost) {
 				sp->s_itrace = i;
@@ -6544,26 +5124,14 @@ setscores(int offs, int size)
 				bestcost = tempcost;
 			}
 			sp->s_cost = bestcost;
-			++sp;			/* Next column.		*/
+			++sp;
 			++vp;
 		}
 		++pp;
-		sp1 += NROW;			/* Next row.		*/
+		sp1 += NROW;
 	}
 }
 
-/*
- * Trace back through the dynamic programming cost
- * matrix, and update the screen using an optimal sequence
- * of redraws, insert lines, and delete lines. The "offs" is
- * the origin 0 offset of the chunk of the screen we are about to
- * update. The "i" and "j" are always started in the lower right
- * corner of the matrix, and imply the size of the screen.
- * A full screen traceback is called with offs=0 and i=j=nrow-1.
- * There is some do-it-yourself double subscripting here,
- * which is acceptable because this routine is much less compute
- * intensive then the code that builds the score matrix!
- */
 static void
 traceback(int offs, int size, int i, int j)
 {
@@ -6574,12 +5142,12 @@ traceback(int offs, int size, int i, int j)
 	register int	ndraw;
 	register int	ndell;
 
-	if (i==0 && j==0)			/* End of update.	*/
+	if (i==0 && j==0)
 		return;
 	itrace = score[(NROW*i) + j].s_itrace;
 	jtrace = score[(NROW*i) + j].s_jtrace;
-	if (itrace == i) {			/* [i, j-1]		*/
-		ninsl = 0;			/* Collect inserts.	*/
+	if (itrace == i) {
+		ninsl = 0;
 		if (i != size)
 			ninsl = 1;
 		ndraw = 1;
@@ -6596,14 +5164,14 @@ traceback(int offs, int size, int i, int j)
 			ttcolor(CTEXT);
 			ttinsl(offs+j-ninsl, offs+size-1, ninsl);
 		}
-		do {				/* B[j], A[j] blank.	*/
+		do {
 			k = offs+j-ndraw;
 			uline(k, vscreen[k], &blanks);
 		} while (--ndraw);
 		return;
 	}
-	if (jtrace == j) {			/* [i-1, j]		*/
-		ndell = 0;			/* Collect deletes.	*/
+	if (jtrace == j) {
+		ndell = 0;
 		if (j != size)
 			ndell = 1;
 		while (itrace!=0 || jtrace!=0) {
@@ -6627,9 +5195,6 @@ traceback(int offs, int size, int i, int j)
 #endif
 static	FILE	*ffp;
 
-/*
- * Open a file for reading.
- */
 static int
 ffropen(char * fn)
 {
@@ -6638,11 +5203,6 @@ ffropen(char * fn)
 	return (FIOSUC);
 }
 
-/*
- * Open a file for writing.
- * Return TRUE if all is well, and
- * FALSE on error (cannot create).
- */
 static int
 ffwopen(char * fn)
 {
@@ -6653,10 +5213,6 @@ ffwopen(char * fn)
 	return (FIOSUC);
 }
 
-/*
- * Close a file.
- * Should look at the status.
- */
 static int
 ffclose(void)
 {
@@ -6664,13 +5220,6 @@ ffclose(void)
 	return (FIOSUC);
 }
 
-/*
- * Write a line to the already
- * opened file. The "buf" points to the
- * buffer, and the "nbuf" is its length, less
- * the free newline. Return the status.
- * Check only at the newline.
- */
 static int
 ffputline(char * buf, int nbuf)
 {
@@ -6686,18 +5235,6 @@ ffputline(char * buf, int nbuf)
 	return (FIOSUC);
 }
 
-/*
- * Read a line from a file, and store the bytes
- * in the supplied buffer. Stop on end of file or end of
- * line. Don't get upset by files that don't have an end of
- * line on the last line; this seem to be common on CP/M-86 and
- * MS-DOS (the suspected culprit is VAX/VMS kermit, but this
- * has not been confirmed. If this is sufficiently researched
- * it may be possible to pull this kludge). Delete any CR
- * followed by an LF. This is mainly for runoff documents,
- * both on VMS and on Ultrix (they get copied over from
- * VMS systems with DECnet).
- */
 static int
 ffgetline(char * buf, int nbuf)
 {
@@ -6707,39 +5244,30 @@ ffgetline(char * buf, int nbuf)
 	i = 0;
 	for (;;) {
 		c = getc(ffp);
-		if (c == '\r') {		/* Delete any non-stray	*/
-			c = getc(ffp);		/* carriage returns.	*/
+		if (c == '\r') {
+			c = getc(ffp);
 			if (c != '\n') {
 				if (i < nbuf-1)
 					buf[i++] = '\r';
 			}
 		}
-		if (c==EOF || c=='\n')		/* End of line.		*/
+		if (c==EOF || c=='\n')
 			break;
 		if (i < nbuf-1)
 			buf[i++] = c;
 	}
-	if (c == EOF) {				/* End of file.		*/
+	if (c == EOF) {
 		if (ferror(ffp) != FALSE) {
 			eprintf("File read error");
 			return (FIOERR);
 		}
-		if (i == 0)			/* Don't get upset if	*/
-			return (FIOEOF);	/* no newline at EOF.	*/
+		if (i == 0)
+			return (FIOEOF);
 	}
 	buf[i] = 0;
 	return (FIOSUC);
 }
 
-/*
- * Rename the file "fname" into a backup
- * copy. On Unix the backup has the same name as the
- * original file, with a "~" on the end; this seems to
- * be newest of the new-speak. The error handling is
- * all in "file.c". The "unlink" is perhaps not the
- * right thing here; I don't care that much as
- * I don't enable backups myself.
- */
 static int
 fbackupfile(char * fname)
 {
@@ -6749,7 +5277,7 @@ fbackupfile(char * fname)
 		return (ABORT);
 	(void) strcpy(nname, fname);
 	(void) strcat(nname, "~");
-	(void) unlink(nname);			/* Ignore errors.	*/
+	(void) unlink(nname);
 	if (rename(fname, nname) < 0) {
 		free(nname);
 		return (FALSE);
@@ -6758,46 +5286,14 @@ fbackupfile(char * fname)
 	return (TRUE);
 }
 
-/*
- * The string "fn" is a file name.
- * Perform any required case adjustments. All sustems
- * we deal with so far have case insensitive file systems.
- * We zap everything to lower case. The problem we are trying
- * to solve is getting 2 buffers holding the same file if
- * you visit one of them with the "caps lock" key down.
- * On UNIX file names are dual case, so we leave
- * everything alone.
- */
 static void
 adjustcase(char * fn)
 {
-#if	0
-	register int	c;
-
-	while ((c = *fn) != 0) {
-		if (c>='A' && c<='Z')
-			*fn = c + 'a' - 'A';
-		++fn;
-	}
-#endif
 }
 #include	<signal.h>
 
-static char	*shellp	= NULL;			/* Saved "SHELL" name.		*/
+static char	*shellp	= NULL;
 
-
-/* getenv() provided by <stdlib.h> */
-
-/*
- * This code does a one of 2 different
- * things, depending on what version of the shell
- * you are using. If you are using the C shell, which
- * implies that you are using job control, then e
- * moves the cursor to a nice place and sends itself a
- * stop signal. If you are using the Bourne shell it runs
- * a subshell using fork/exec. Bound to "C-C", and used
- * as a subcommand by "C-Z".
- */
 static int
 spawncli(int f, int n, int k)
 {
@@ -6812,7 +5308,7 @@ spawncli(int f, int n, int k)
 		if (shellp == NULL)
 			shellp = getenv("shell");
 		if (shellp == NULL)
-			shellp = "/bin/sh";	/* Safer.		*/
+			shellp = "/bin/sh";
 	}
 	ttcolor(CTEXT);
 	ttnowindow();
@@ -6821,8 +5317,8 @@ spawncli(int f, int n, int k)
 			ttmove(nrow-1, 0);
 			tteeol();
 			epresf = FALSE;
-		}				/* Csh types a "\n"	*/
-		ttmove(nrow-2, 0);		/* before "Stopped".	*/
+		}
+		ttmove(nrow-2, 0);
 	} else {
 		ttmove(nrow-1, 0);
 		if (epresf != FALSE) {
@@ -6832,9 +5328,9 @@ spawncli(int f, int n, int k)
 	}
 	ttflush();
 	ttclose();
-	if (strcmp(shellp, "/bin/csh") == 0)	/* C shell.		*/
+	if (strcmp(shellp, "/bin/csh") == 0)
 		kill(0, SIGTSTP);
-	else {					/* Bourne shell.	*/
+	else {
 		oqsig = signal(SIGQUIT, SIG_IGN);
 		oisig = signal(SIGINT,  SIG_IGN);
 		if ((pid=fork()) < 0) {
@@ -6845,14 +5341,14 @@ spawncli(int f, int n, int k)
 		}
 		if (pid == 0) {
 			execl(shellp, "sh", "-i", NULL);
-			_exit(0);		/* Should do better!	*/
+			_exit(0);
 		}
 		while ((wpid=wait(&status))>=0 && wpid!=pid)
 			;
 		signal(SIGQUIT, oqsig);
 		signal(SIGINT,  oisig);
 	}
-	sgarbf = TRUE;				/* Force repaint.	*/
+	sgarbf = TRUE;
 	ttopen();
 	return (TRUE);
 }
@@ -6866,21 +5362,21 @@ char	*version[] = {
 	"e editor version " PACKAGE_VERSION,
 	"Source from REX::USER$A:[CONROY.HACKING.MINIEMACS]",
 	NULL
-}; 
-int	thisflag;			/* Flags, this command		*/
-int	lastflag;			/* Flags, last command		*/
-int	curgoal;			/* Goal column			*/
-BUFFER	*curbp;				/* Current buffer		*/
-WINDOW	*curwp;				/* Current window		*/
-BUFFER	*bheadp;			/* BUFFER listhead		*/
-WINDOW	*wheadp;			/* WINDOW listhead		*/
-BUFFER	*blistp;			/* Buffer list BUFFER		*/
-short	kbdm[NKBDM] = { KCTLX | ')' };	/* Macro			*/
-short	*kbdmip;			/* Input  for above		*/
-short	*kbdmop;			/* Output for above		*/
-char	pat[NPAT];			/* Pattern			*/
-SYMBOL	*symbol[NSHASH];		/* Symbol table listhead.	*/
-SYMBOL	*binding[NKEYS];		/* Key bindings.		*/
+};
+int	thisflag;
+int	lastflag;
+int	curgoal;
+BUFFER	*curbp;
+WINDOW	*curwp;
+BUFFER	*bheadp;
+WINDOW	*wheadp;
+BUFFER	*blistp;
+short	kbdm[NKBDM] = { KCTLX | ')' };
+short	*kbdmip;
+short	*kbdmop;
+char	pat[NPAT];
+SYMBOL	*symbol[NSHASH];
+SYMBOL	*binding[NKEYS];
 
 int
 main(int argc, char * * argv)
@@ -6891,16 +5387,16 @@ main(int argc, char * * argv)
 	register int	mflag;
 	char		bname[NBUFN];
 
-	strcpy(bname, "main");			/* Get buffer name.	*/
+	strcpy(bname, "main");
 	if (argc > 1)
 		makename(bname, argv[1]);
-	vtinit();				/* Virtual terminal.	*/
-	edinit(bname);				/* Buffers, windows.	*/
-	keymapinit();				/* Symbols, bindings.	*/
+	vtinit();
+	edinit(bname);
+	keymapinit();
 	if (argc > 1) { update(); readin(argv[1]); } else filldir(".");
-	lastflag = 0;				/* Fake last flags.	*/
+	lastflag = 0;
 loop:
-	update();				/* Fix up the screen.	*/
+	update();
 	c = getkey();
 	if (epresf != FALSE) {
 		eerase();
@@ -6908,7 +5404,7 @@ loop:
 	}
 	f = FALSE;
 	n = 1;
-	if (c == (KCTRL|'U')) {			/* ^U, start argument.	*/
+	if (c == (KCTRL|'U')) {
 		f = TRUE;
 		n = 4;
 		while ((c=getkey()) == (KCTRL|'U'))
@@ -6927,7 +5423,7 @@ loop:
 				n = -n;
 		}
 	}
-	if (kbdmip != NULL) {			/* Save macro strokes.	*/
+	if (kbdmip != NULL) {
 		if (c!=(KCTLX|')') && kbdmip>&kbdm[NKBDM-6]) {
 			ctrlg(FALSE, 0, KRANDOM);
 			goto loop;
@@ -6938,17 +5434,10 @@ loop:
 		}
 		*kbdmip++ = c;
 	}
-	execute(c, f, n);			/* Do it.		*/
+	execute(c, f, n);
 	goto loop;
 }
 
-/*
- * Command execution. Look up the binding in the the
- * binding array, and do what it says. Return a very bad status
- * if there is no binding, or if the symbol has a type that
- * is not usable (there is no way to get this into a symbol table
- * entry now). Also fiddle with the flags.
- */
 static int
 execute(int c, int f, int n)
 {
@@ -6965,65 +5454,45 @@ execute(int c, int f, int n)
 	return (ABORT);
 }
 
-/*
- * Initialize all of the buffers
- * and windows. The buffer name is passed down as
- * an argument, because the main routine may have been
- * told to read in a file by default, and we want the
- * buffer name to be right.
- */
 static void
 edinit(char * bname)
 {
 	register BUFFER	*bp;
 	register WINDOW	*wp;
 
-	bp = bfind(bname, TRUE);		/* Text buffer.		*/
-	blistp = bcreate("");			/* Special list buffer.	*/
-	wp = (WINDOW *) malloc(sizeof(WINDOW));	/* Initial window.	*/
+	bp = bfind(bname, TRUE);
+	blistp = bcreate("");
+	wp = (WINDOW *) malloc(sizeof(WINDOW));
 	if (bp==NULL || wp==NULL || blistp==NULL)
 		abort();
-	curbp  = bp;				/* Current ones.	*/
+	curbp  = bp;
 	wheadp = wp;
 	curwp  = wp;
-	wp->w_wndp  = NULL;			/* Initialize window.	*/
+	wp->w_wndp  = NULL;
 	wp->w_bufp  = bp;
-	bp->b_nwnd  = 1;			/* Displayed.		*/
+	bp->b_nwnd  = 1;
 	wp->w_linep = bp->b_linep;
 	wp->w_dotp  = bp->b_linep;
 	wp->w_doto  = 0;
 	wp->w_markp = NULL;
 	wp->w_marko = 0;
 	wp->w_toprow = 0;
-	wp->w_ntrows = nrow-2;			/* 2 = mode, echo.	*/
+	wp->w_ntrows = nrow-2;
 	wp->w_force = 0;
-	wp->w_flag  = WFMODE|WFHARD;		/* Full.		*/
+	wp->w_flag  = WFMODE|WFHARD;
 }
-	
-/*
- * Fancy quit command, as implemented
- * by Jeff. If the current buffer has changed
- * do a write current buffer. Otherwise run a command
- * interpreter in a subjob. Two of these will get you
- * out. Bound to "C-Z".
- */
+
 static int
 undo(int f, int n, int k)
 {int c;if(!ut)return FALSE;c=uc[--ut&4095];ul=1;if(c>0){backchar(FALSE,1,KRANDOM);ldelete(1,FALSE);}else if(!c){backchar(FALSE,1,KRANDOM);ldelnewline();}else if(c>-256)linsert(1,-c);else lnewline();ul=0;lchange(WFHARD);return TRUE;}
 static int
 jeffexit(int f, int n, int k)
 {
-	if ((curbp->b_flag&BFCHG) != 0)		/* Changed.		*/
+	if ((curbp->b_flag&BFCHG) != 0)
 		return (filesave(f, n, KRANDOM));
-	return (spawncli(f, n, KRANDOM));	/* Suspend.		*/
+	return (spawncli(f, n, KRANDOM));
 }
 
-/*
- * Quit command. If an argument, always
- * quit. Otherwise confirm if a buffer has been
- * changed and not written out. Normally bound
- * to "C-X C-C".
- */
 static int
 quit(int f, int n, int k)
 {
@@ -7031,12 +5500,6 @@ quit(int f, int n, int k)
 	exit(GOOD);
 }
 
-/*
- * Begin a keyboard macro.
- * Error if not at the top level
- * in keyboard processing. Set up
- * variables and return.
- */
 static int
 ctlxlp(int f, int n, int k)
 {
@@ -7049,12 +5512,6 @@ ctlxlp(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * End keyboard macro. Check for
- * the same limit conditions as the
- * above routine. Set up the variables
- * and return to the caller.
- */
 static int
 ctlxrp(int f, int n, int k)
 {
@@ -7067,14 +5524,6 @@ ctlxrp(int f, int n, int k)
 	return (TRUE);
 }
 
-/*
- * Execute a macro.
- * The command argument is the
- * number of times to loop. Quit as
- * soon as a command gets an error.
- * Return TRUE if all ok, else
- * FALSE.
- */
 static int
 ctlxe(int f, int n, int k)
 {
@@ -7087,7 +5536,7 @@ ctlxe(int f, int n, int k)
 		eprintf("Not now");
 		return (FALSE);
 	}
-	if (n <= 0) 
+	if (n <= 0)
 		return (TRUE);
 	do {
 		kbdmop = &kbdm[0];
@@ -7106,15 +5555,6 @@ ctlxe(int f, int n, int k)
 	return (s);
 }
 
-/*
- * Abort.
- * Beep the beeper.
- * Kill off any keyboard macro,
- * etc., that is in progress.
- * Sometimes called as a routine,
- * to do general aborting of
- * stuff.
- */
 static int
 ctrlg(int f, int n, int k)
 {
@@ -7126,12 +5566,6 @@ ctrlg(int f, int n, int k)
 	return (ABORT);
 }
 
-/*
- * Display the version. All this does
- * is copy the text in the external "version" array into
- * the message system, and call the message reading code.
- * Don't call display if there is an argument.
- */
 static int
 showversion(int f, int n, int k)
 {
@@ -7143,7 +5577,7 @@ showversion(int f, int n, int k)
 		if (writemsg(cp) == FALSE)
 			return (FALSE);
 	}
-	if (f != FALSE)				/* No display if arg.	*/
+	if (f != FALSE)
 		return (TRUE);
 	return (readmsg(0, 1, KRANDOM));
 }
