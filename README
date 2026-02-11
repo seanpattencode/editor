@@ -1,8 +1,8 @@
-# Startup time (ms, real TUI via pty)
+# Startup time (hyperfine, µs)
 
-| e | emacs | neovim |
-|---|-------|--------|
-| 0 | 72    | 1016   |
+| e   | nano | micro | nvim  | vi    | emacs |
+|-----|------|-------|-------|-------|-------|
+| 621 | 924  | 3600  | 25000 | 26800 | 94400 |
 
 bench/bench.sh
 
