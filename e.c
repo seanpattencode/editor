@@ -649,48 +649,17 @@ ttcolor(int color)
 	}
 }
 
+static volatile sig_atomic_t resized;
+static void sigwinch(int s){(void)s;resized=1;}
+
 static void
 ttresize(void)
 {
-	register int	c;
-	register int	newnrow;
-	register int	newncol;
-
-	ttputc(ESC);
-	ttputc('[');
-	asciiparm(HUGE);
-	ttputc(';');
-	asciiparm(HUGE);
-	ttputc('H');
-	ttrow = HUGE;
-	ttcol = HUGE;
-	ttputc(ESC);
-	ttputc('[');
-	ttputc('6');
-	ttputc('n');
-	ttflush();
-	if (ttgetc()!=ESC || ttgetc()!='[')
-		return;
-	newnrow = 0;
-	while ((c=ttgetc())>='0' && c<='9')
-		newnrow = 10*newnrow + c - '0';
-	if (c != ';')
-		return;
-	newncol = 0;
-	while ((c=ttgetc())>='0' && c<='9')
-		newncol = 10*newncol + c - '0';
-	if (c != 'R')
-		return;
-	if (newnrow < 1)
-		newnrow = 1;
-	else if (newnrow > NROW)
-		newnrow = NROW;
-	if (newncol < 1)
-		newncol = 1;
-	else if (newncol > NCOL)
-		newncol = NCOL;
-	nrow = newnrow;
-	ncol = newncol;
+	struct winsize ws;
+	if (ioctl(0,TIOCGWINSZ,&ws)==0&&ws.ws_row&&ws.ws_col){
+		nrow=ws.ws_row>NROW?NROW:ws.ws_row;
+		ncol=ws.ws_col>NCOL?NCOL:ws.ws_col;
+	}
 }
 #define	AGRAVE	0x60
 
@@ -5421,11 +5390,13 @@ main(int argc, char * * argv)
 	if (argc > 1)
 		makename(bname, argv[1]);
 	vtinit();
+	signal(SIGWINCH, sigwinch);
 	edinit(bname);
 	keymapinit();
 	if (argc > 1) { update(); readin(argv[1]); } else filldir(".");
 	lastflag = 0;
 loop:
+	if(resized){resized=0;refresh(0,0,0);}
 	update();
 	c = getkey();
 	if (epresf != FALSE) {
