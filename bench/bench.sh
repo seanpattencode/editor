@@ -30,54 +30,41 @@ STUB
 fi
 
 if command -v hyperfine >/dev/null 2>&1; then
-    # precise measurement, no shell overhead
     cmds=("$TMP" "$TMP $DIR/e.c" "ls $DIR")
     labels=("e" "e (5.6k file)" "ls")
-    command -v nano  >/dev/null && { cmds+=("nano --help");  labels+=("nano --help"); }
-    command -v micro >/dev/null && { cmds+=("micro -version"); labels+=("micro -version"); }
+    command -v nano  >/dev/null && { cmds+=("nano --help");  labels+=("nano"); }
+    command -v micro >/dev/null && { cmds+=("micro -version"); labels+=("micro"); }
     command -v nvim  >/dev/null && { cmds+=("nvim -c q" "nvim -c q $DIR/e.c"); labels+=("nvim" "nvim (5.6k file)"); }
+    command -v vi    >/dev/null && { cmds+=("printf '\\x1b:q\\n' | vi"); labels+=("vi"); }
+    command -v emacs >/dev/null && { cmds+=("emacs -nw -Q --eval '(kill-emacs)'"); labels+=("emacs"); }
+    [[ -x "$UE" ]] && { cmds+=("printf '\\x18\\x03' | $UE"); labels+=("uemacs"); }
     args=(--warmup 3 --min-runs 10 -N)
     for i in "${!cmds[@]}"; do
         args+=(-n "${labels[$i]}" "${cmds[$i]}")
     done
-    hyperfine "${args[@]}"
-
-    # editors that need a real tty — wrap in script(1), 5s timeout each
-    command -v emacs >/dev/null &&
-        timeout 5 hyperfine --warmup 1 --min-runs 5 -n emacs \
-            "timeout 2 script -qec \"emacs -nw -Q --eval '(kill-emacs)'\" /dev/null"
-    command -v vi >/dev/null &&
-        timeout 5 hyperfine --warmup 1 --min-runs 5 -n vi \
-            "timeout 2 script -qec 'vi -c q' /dev/null"
-    [[ -x "$UE" ]] &&
-        timeout 5 hyperfine --warmup 1 --min-runs 5 -n uemacs \
-            "timeout 2 script -qec \"printf '\\x18\\x03' | $UE\" /dev/null"
+    timeout 60 hyperfine "${args[@]}"
 else
-    # fallback: pty-based measurement
-    OVH=0; for i in 1 2 3; do
-        s=$EPOCHREALTIME; script -qec true /dev/null </dev/null >/dev/null 2>&1; e=$EPOCHREALTIME
-        OVH=$(python3 -c "print(max($OVH,($e-$s)*1000))")
-    done
+    # fallback: direct timing
     bench() {
         name=$1; shift
-        printf "%-10s " "$name"
+        printf "%-16s " "$name"
         for i in 1 2 3 4 5; do
             start=$EPOCHREALTIME
-            timeout 2 script -qec "$*" /dev/null </dev/null >/dev/null 2>&1
+            timeout 2 bash -c "$*" </dev/null >/dev/null 2>&1
             end=$EPOCHREALTIME
-            python3 -c "print(f'{max(0,($end-$start)*1000-$OVH):.1f}', end=' ')"
+            python3 -c "print(f'{($end-$start)*1000:.1f}', end=' ')"
         done
         echo "ms"
     }
-    bench "e" $TMP
+    bench "e" "$TMP"
     bench "e (file)" "$TMP $DIR/e.c"
-    bench "ls" ls "$DIR"
-    command -v nano  >/dev/null && bench "nano"  nano --help
-    command -v micro >/dev/null && bench "micro" micro -version
-    command -v nvim  >/dev/null && bench "nvim"  nvim -c q
-    command -v nvim  >/dev/null && bench "nvim (file)" nvim -c q "$DIR/e.c"
-    command -v emacs >/dev/null && bench "emacs" "emacs -nw --eval '(kill-emacs)'"
-    command -v vi    >/dev/null && bench "vi"    vi -c q
+    bench "ls" "ls $DIR"
+    command -v nano  >/dev/null && bench "nano"  "nano --help"
+    command -v micro >/dev/null && bench "micro" "micro -version"
+    command -v nvim  >/dev/null && bench "nvim"  "nvim -c q"
+    command -v nvim  >/dev/null && bench "nvim (file)" "nvim -c q $DIR/e.c"
+    command -v vi    >/dev/null && bench "vi"    "printf '\\x1b:q\\n' | vi"
+    command -v emacs >/dev/null && bench "emacs" "emacs -nw -Q --eval '(kill-emacs)'"
     [[ -x "$UE" ]] && bench "uemacs" "printf '\\x18\\x03' | $UE"
 fi
 
