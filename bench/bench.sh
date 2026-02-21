@@ -13,8 +13,8 @@ $CC -w -std=gnu89 -O3 -march=native -flto -o $TMP $TMP.c 2>/dev/null
 
 if command -v hyperfine >/dev/null 2>&1; then
     # precise measurement, no shell overhead
-    cmds=("$TMP" "$TMP $DIR/e.c")
-    labels=("e" "e (5.6k file)")
+    cmds=("$TMP" "$TMP $DIR/e.c" "ls $DIR")
+    labels=("e" "e (5.6k file)" "ls")
     command -v nano  >/dev/null && { cmds+=("nano --help");  labels+=("nano --help"); }
     command -v micro >/dev/null && { cmds+=("micro -version"); labels+=("micro -version"); }
     command -v nvim  >/dev/null && { cmds+=("nvim -c q" "nvim -c q $DIR/e.c"); labels+=("nvim" "nvim (5.6k file)"); }
@@ -50,6 +50,7 @@ else
     }
     bench "e" $TMP
     bench "e (file)" "$TMP $DIR/e.c"
+    bench "ls" ls "$DIR"
     command -v nano  >/dev/null && bench "nano"  nano --help
     command -v micro >/dev/null && bench "micro" micro -version
     command -v nvim  >/dev/null && bench "nvim"  nvim -c q
