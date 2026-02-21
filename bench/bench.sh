@@ -4,9 +4,12 @@
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=/tmp/e_bench_$$
 
+CC=$(compgen -c clang- 2>/dev/null|grep -xE 'clang-[0-9]+'|sort -t- -k2 -rn|head -1)||CC=""
+[[ -z "$CC" ]]&&for c in clang gcc;do command -v $c &>/dev/null&&CC=$c&&break;done
+[[ -z "$CC" ]]&&echo "no C compiler"&&exit 1
+
 sed 's/lastflag = 0;/update(); _exit(0);/' "$DIR/e.c" > $TMP.c
-clang -w -std=gnu89 -O3 -march=native -flto -o $TMP $TMP.c 2>/dev/null ||
-gcc -w -std=gnu89 -O2 -o $TMP $TMP.c 2>/dev/null
+$CC -w -std=gnu89 -O3 -march=native -flto -o $TMP $TMP.c 2>/dev/null
 
 if command -v hyperfine >/dev/null 2>&1; then
     # precise measurement, no shell overhead
