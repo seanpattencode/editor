@@ -13,11 +13,11 @@ $CC -w -std=gnu89 -O3 -march=native -flto -o $TMP $TMP.c 2>/dev/null
 
 if command -v hyperfine >/dev/null 2>&1; then
     # precise measurement, no shell overhead
-    cmds=("$TMP")
-    labels=("e")
+    cmds=("$TMP" "$TMP $DIR/e.c")
+    labels=("e" "e (5.6k file)")
     command -v nano  >/dev/null && { cmds+=("nano --help");  labels+=("nano --help"); }
     command -v micro >/dev/null && { cmds+=("micro -version"); labels+=("micro -version"); }
-    command -v nvim  >/dev/null && { cmds+=("nvim -c q");    labels+=("nvim"); }
+    command -v nvim  >/dev/null && { cmds+=("nvim -c q" "nvim -c q $DIR/e.c"); labels+=("nvim" "nvim (5.6k file)"); }
     args=(--warmup 3 --min-runs 10 -N)
     for i in "${!cmds[@]}"; do
         args+=(-n "${labels[$i]}" "${cmds[$i]}")
@@ -49,9 +49,11 @@ else
         echo "ms"
     }
     bench "e" $TMP
+    bench "e (file)" "$TMP $DIR/e.c"
     command -v nano  >/dev/null && bench "nano"  nano --help
     command -v micro >/dev/null && bench "micro" micro -version
     command -v nvim  >/dev/null && bench "nvim"  nvim -c q
+    command -v nvim  >/dev/null && bench "nvim (file)" nvim -c q "$DIR/e.c"
     command -v emacs >/dev/null && bench "emacs" "emacs -nw --eval '(kill-emacs)'"
     command -v vi    >/dev/null && bench "vi"    vi -c q
 fi
