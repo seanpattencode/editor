@@ -1,8 +1,11 @@
 # Startup time (ms, hyperfine)
 
-| e    | nano | micro | nvim | vi   | emacs |
-|------|------|-------|------|------|-------|
-| 0.62 | 0.92 | 3.6   | 25.0 | 26.8 | 94.4  |
+| e    | ls   | nano | micro | nvim | vi   |
+|------|------|------|-------|------|------|
+| 0.56 | 1.8  | 0.79 | 2.5   | 16.9 | 22.3 |
+
+e opens a 5,600-line file in 1.1ms. nvim takes 175ms (159x slower).
+e renders a full interactive directory browser 3x faster than ls prints filenames.
 
 bench/bench.sh
 
