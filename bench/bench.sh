@@ -11,6 +11,24 @@ CC=$(compgen -c clang- 2>/dev/null|grep -xE 'clang-[0-9]+'|sort -t- -k2 -rn|head
 sed 's/lastflag = 0;/update(); _exit(0);/' "$DIR/e.c" > $TMP.c
 $CC -w -std=gnu89 -O3 -march=native -flto -o $TMP $TMP.c 2>/dev/null
 
+# build uemacs (torvalds) once, cache at /tmp/uemacs_bench
+UE=/tmp/uemacs_bench
+if [[ ! -x "$UE" ]]; then
+    UD=/tmp/uemacs
+    [[ -d "$UD" ]] || timeout 5 git clone --depth 1 -q https://github.com/torvalds/uemacs "$UD" 2>/dev/null
+    if [[ -d "$UD" ]]; then
+        cat > "$UD/hstub.h" << 'STUB'
+typedef void Hunhandle;
+static inline Hunhandle*Hunspell_create(const char*a,const char*d){return(void*)0;}
+static inline int Hunspell_spell(Hunhandle*h,const char*w){return 1;}
+static inline void Hunspell_add_dic(Hunhandle*h,const char*f){}
+STUB
+        sed -i 's|LIBS=ncurses hunspell|LIBS=ncurses|;' "$UD/Makefile"
+        sed -i 's|#include <hunspell.h>|#include "hstub.h"|' "$UD/main.c"
+        timeout 5 make -C "$UD" -j$(nproc) -s 2>/dev/null && cp "$UD/em" "$UE"
+    fi
+fi
+
 if command -v hyperfine >/dev/null 2>&1; then
     # precise measurement, no shell overhead
     cmds=("$TMP" "$TMP $DIR/e.c" "ls $DIR")
@@ -24,13 +42,16 @@ if command -v hyperfine >/dev/null 2>&1; then
     done
     hyperfine "${args[@]}"
 
-    # editors that need a real tty — wrap in script(1)
+    # editors that need a real tty — wrap in script(1), 5s timeout each
     command -v emacs >/dev/null &&
-        hyperfine --warmup 1 --min-runs 5 -n emacs \
-            "script -qec \"emacs -nw -Q --eval '(kill-emacs)'\" /dev/null"
+        timeout 5 hyperfine --warmup 1 --min-runs 5 -n emacs \
+            "timeout 2 script -qec \"emacs -nw -Q --eval '(kill-emacs)'\" /dev/null"
     command -v vi >/dev/null &&
-        hyperfine --warmup 1 --min-runs 5 -n vi \
-            "script -qec 'vi -c q' /dev/null"
+        timeout 5 hyperfine --warmup 1 --min-runs 5 -n vi \
+            "timeout 2 script -qec 'vi -c q' /dev/null"
+    [[ -x "$UE" ]] &&
+        timeout 5 hyperfine --warmup 1 --min-runs 5 -n uemacs \
+            "timeout 2 script -qec \"printf '\\x18\\x03' | $UE\" /dev/null"
 else
     # fallback: pty-based measurement
     OVH=0; for i in 1 2 3; do
@@ -42,7 +63,7 @@ else
         printf "%-10s " "$name"
         for i in 1 2 3 4 5; do
             start=$EPOCHREALTIME
-            script -qec "$*" /dev/null </dev/null >/dev/null 2>&1
+            timeout 2 script -qec "$*" /dev/null </dev/null >/dev/null 2>&1
             end=$EPOCHREALTIME
             python3 -c "print(f'{max(0,($end-$start)*1000-$OVH):.1f}', end=' ')"
         done
@@ -57,6 +78,7 @@ else
     command -v nvim  >/dev/null && bench "nvim (file)" nvim -c q "$DIR/e.c"
     command -v emacs >/dev/null && bench "emacs" "emacs -nw --eval '(kill-emacs)'"
     command -v vi    >/dev/null && bench "vi"    vi -c q
+    [[ -x "$UE" ]] && bench "uemacs" "printf '\\x18\\x03' | $UE"
 fi
 
 rm -f $TMP $TMP.c
