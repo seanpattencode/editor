@@ -739,7 +739,7 @@ loop:
 				for(i=0;i<4;i++){LINE*ln=b&1?lforw(p):lback(p);if(ln!=curbp->b_linep)p=ln;}
 				curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
 				x--; y--; row=y-curwp->w_toprow;
-				if(x>=(b&32?ncol/2:ncol-2)&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
+				if(x>=ncol-2&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
 					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t++;
 					g=row*t/curwp->w_ntrows;for(p=lforw(curbp->b_linep);g>0&&p!=curbp->b_linep;g--)p=lforw(p);
 					curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
