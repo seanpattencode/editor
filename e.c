@@ -62,6 +62,8 @@ exit 0
 #include	<unistd.h>
 #include	<sys/wait.h>
 static int dirmode;
+static char dirsrch[64];
+static int dirsl;
 static int sb_top, sb_bot;
 static int uc[4096],ut,ul,hoff;
 
@@ -2761,7 +2763,7 @@ while((e=readdir(d))&&c<4096){if(e->d_name[0]=='.'&&!e->d_name[1])continue;ents[
 closedir(d);qsort(ents,c,sizeof(Dent),dentcmp);for(i=0;i<c;i++){
 n=sprintf(s,"%s%s",ents[i].d?"> ":"  ",ents[i].n);if((l=lalloc(n))){
 l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
-curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}dirmode=1;
+curbp->b_linep->l_bp=l;while(n--)lputc(l,n,s[n]);}}dirmode=1;dirsl=0;dirsrch[0]=0;
 curwp->w_linep=curwp->w_dotp=lforw(curbp->b_linep);curwp->w_doto=0;curwp->w_flag|=WFHARD;}
 static int
 backdir(int f, int n, int k)
@@ -3020,8 +3022,17 @@ selfinsert(int f, int n, int k)
 {
 	register int	c;
 
-	if (dirmode)
-		return (TRUE);
+	if (dirmode) {
+		c = k & KCHAR;
+		if (dirsl < 63) { LINE *lp; dirsrch[dirsl++] = c; dirsrch[dirsl] = 0;
+			for (lp=lforw(curbp->b_linep); lp!=curbp->b_linep; lp=lforw(lp)) {
+				char fn[256]; int i, nn=llength(lp); if(nn<3) continue;
+				for(i=0;i<nn-2&&i<255;i++) fn[i]=lgetc(lp,i+2); fn[i]=0;
+				if(strcasestr(fn,dirsrch)){curwp->w_dotp=lp;curwp->w_doto=0;curwp->w_flag|=WFMOVE;break;}
+			}
+		}
+		eprintf("find: %s", dirsrch); return TRUE;
+	}
 	if (n < 0)
 		return (FALSE);
 	if (n == 0)
@@ -3138,6 +3149,7 @@ backdel(int f, int n, int k)
 {
 	register int	s;
 
+	if (dirmode) { if(dirsl>0){dirsrch[--dirsl]=0;eprintf("find: %s",dirsl?dirsrch:"");} return TRUE; }
 	if (n < 0)
 		return (forwdel(f, -n, KRANDOM));
 	if (f != FALSE) {
