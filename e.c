@@ -6,9 +6,10 @@ CC=$(compgen -c clang- 2>/dev/null|grep -xE 'clang-[0-9]+'|sort -t- -k2 -rn|head
 [[ -z "$CC" ]]&&for c in clang gcc;do command -v $c &>/dev/null&&CC=$c&&break;done
 [[ -z "$CC" ]]&&echo "no C compiler"&&exit 1
 W="-std=gnu89 -Werror -Weverything -Wno-padded -Wno-disabled-macro-expansion -Wno-reserved-id-macro -Wno-documentation -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused -Wno-unused-parameter -Wno-missing-braces -Wno-sign-conversion -Wno-shorten-64-to-32 -Wno-cast-qual -Wno-missing-variable-declarations -Wno-implicit-int-conversion -Wno-conditional-uninitialized -Wno-shadow -Wno-unused-macros -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-result -Wno-implicit-void-ptr-cast -Wno-c++-keyword --system-header-prefix=/usr/include -isystem /usr/local/include"
-H="-fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2 -fstack-clash-protection -fcf-protection"
+H="-fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2"
+[[ "$(uname -m)" == x86_64 ]]&&H+=" -fstack-clash-protection -fcf-protection"
 case "${1:-build}" in
-build)   $CC $W $H -fsyntax-only "$D/e.c"&P1=$!; $CC -std=gnu89 -O3 -march=native -flto -w -o "$D/e" "$D/e.c"&P2=$!; wait $P1&&wait $P2;;
+build)   $CC $W $H -fsyntax-only "$D/e.c"& $CC -std=gnu89 -O3 -march=native -flto -w -o "$D/e" "$D/e.c";;
 debug)   $CC $W $H -Wl,-z,relro,-z,now -O1 -g -fsanitize=address,undefined,integer -o "$D/e" "$D/e.c";;
 install) sh "$D/e.c"&&mkdir -p "$HOME/.local/bin"&&ln -sf "$D/e" "$HOME/.local/bin/e"&&echo "✓ ~/.local/bin/e";;
 clean)   rm -f "$D/e";;
@@ -939,6 +940,7 @@ static int ereply(char* fp, char* buf, int nbuf, ...)
     va_end(ap);
     return result;
 }
+static int ereadf(char*fp,char*buf,int n,int f,...){va_list a;int r;va_start(a,f);r=eread(fp,buf,n,f,a);va_end(a);return r;}
 
 static int
 eread(char * fp, char * buf, int nbuf, int flag, va_list ap)
@@ -4504,7 +4506,7 @@ bindtokey(int f, int n, int k)
 		eprintf("Not now");
 		return (FALSE);
 	}
-	if ((s=eread("Function: ", xname, NXNAME, EFAUTO, NULL)) != TRUE)
+	if ((s=ereadf("Function: ", xname, NXNAME, EFAUTO)) != TRUE)
 		return (s);
 	if ((sp=symlookup(xname)) == NULL) {
 		eprintf("Unknown function for binding");
@@ -4535,7 +4537,7 @@ extend(int f, int n, int k)
 	register int	s;
 	char		xname[NXNAME];
 
-	if ((s=eread(": ", xname, NXNAME, EFNEW|EFAUTO, NULL)) != TRUE)
+	if ((s=ereadf(": ", xname, NXNAME, EFNEW|EFAUTO)) != TRUE)
 		return (s);
 	if ((sp=symlookup(xname)) != NULL)
 		return ((*sp->s_funcp)(f, n, KRANDOM));
