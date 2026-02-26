@@ -17,7 +17,7 @@ clean)   rm -f "$D/e";;
 esac
 exit 0
 #endif
-#define	KBLOCK	8192
+#define	KBLOCK	4096
 #define	GOOD	0
 
 #define	BDC1	'/'
@@ -66,7 +66,7 @@ static int dirmode;
 static char dirsrch[64];
 static int dirsl;
 static int sb_top, sb_bot;
-static int uc[4096],ut,ul,hoff;
+static int uc[2048],ut,ul,hoff;
 
 #define	CVMVAS	1
 
@@ -75,7 +75,7 @@ static int uc[4096],ut,ul,hoff;
 #define	NBUFN	16
 #define	NLINE	256
 #define	NKBDM	256
-#define NMSG	512
+#define NMSG	256
 #define	NPAT	80
 #define	HUGE	1000
 #define NSRCH	128
@@ -719,7 +719,7 @@ loop:
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp;{int i,cc;for(i=cc=0;i<llength(lp)&&cc<x;cc=lgetc(lp,i++)==9?(cc|7)+1:cc+1){}curwp->w_doto=i;}
-					if(ch=='M'){if(b>=128&&!(b&32)){backdir(0, 1, KRANDOM);}else if(!(b&3)&&!(b&32)){if(dirmode){char f[256];int i,nn=llength(lp);
+					if(ch=='M'){if(b>=128&&!(b&32)){backdir(0, 1, KRANDOM);}else if(!(b&3)&&!(b&32)){if(dirmode){char f[80];int i,nn=llength(lp);
 						for(i=0;i<nn;i++)f[i]=lgetc(lp,i);f[nn]=0;
 						if(n>1&&f[0]=='>')filldir(f+2);else{dirmode=0;readin(f+2);}}
 					else{curwp->w_markp=lp;curwp->w_marko=curwp->w_doto;}}}
@@ -1267,7 +1267,7 @@ linsert(int n, int c)
 	register int	i;
 	register WINDOW	*wp;
 
-	if(!ul)uc[ut++&4095]=c;
+	if(!ul)uc[ut++&2047]=c;
 	lchange(WFEDIT);
 	lp1 = curwp->w_dotp;
 	if (lp1 == curbp->b_linep) {
@@ -1343,7 +1343,7 @@ lnewline(void)
 	register int	doto;
 	register WINDOW	*wp;
 
-	if(!ul)uc[ut++&4095]=0;
+	if(!ul)uc[ut++&2047]=0;
 	lchange(WFHARD);
 	lp1  = curwp->w_dotp;
 	doto = curwp->w_doto;
@@ -1401,7 +1401,7 @@ ldelete(int n, int kflag)
 		if (chunk > n)
 			chunk = n;
 		if (chunk == 0) {
-			if(!ul)uc[ut++&4095]=-256;
+			if(!ul)uc[ut++&2047]=-256;
 			lchange(WFHARD);
 			if (ldelnewline() == FALSE
 			|| (kflag!=FALSE && kinsert('\n')==FALSE))
@@ -1410,7 +1410,7 @@ ldelete(int n, int kflag)
 			continue;
 		}
 		lchange(WFEDIT);
-		if(!ul){int i_;for(i_=0;i_<chunk;i_++)uc[ut++&4095]=-lgetc(dotp,doto+i_);}
+		if(!ul){int i_;for(i_=0;i_<chunk;i_++)uc[ut++&2047]=-lgetc(dotp,doto+i_);}
 		cp1 = &dotp->l_text[doto];
 		cp2 = cp1 + chunk;
 		if (kflag != FALSE) {
@@ -2725,13 +2725,13 @@ out:
 	return (TRUE);
 }
 
-typedef struct{char n[256];char d;}Dent;
+typedef struct{char n[64];char d;}Dent;
 static int dentcmp(const void*a,const void*b){Dent*x=(Dent*)a,*y=(Dent*)b;if(x->d!=y->d)return y->d-x->d;return strcasecmp(x->n,y->n);}
 static void
 filldir(char *p)
-{DIR*d;struct dirent*e;LINE*l;int n,c=0,i;char s[256];Dent ents[4096];
+{DIR*d;struct dirent*e;LINE*l;int n,c=0,i;char s[80];Dent ents[512];
 if(!(d=opendir(p)))return;bclear(curbp);chdir(p);getcwd(curbp->b_fname,NFILEN);
-while((e=readdir(d))&&c<4096){if(e->d_name[0]=='.'&&!e->d_name[1])continue;ents[c].d=e->d_type==DT_DIR;strcpy(ents[c++].n,e->d_name);}
+while((e=readdir(d))&&c<512){if(e->d_name[0]=='.'&&!e->d_name[1])continue;ents[c].d=e->d_type==DT_DIR;strlcpy(ents[c++].n,e->d_name,64);}
 closedir(d);qsort(ents,c,sizeof(Dent),dentcmp);for(i=0;i<c;i++){
 n=sprintf(s,"%s%s",ents[i].d?"> ":"  ",ents[i].n);if((l=lalloc(n))){
 l->l_bp=lback(curbp->b_linep);l->l_bp->l_fp=l;l->l_fp=curbp->b_linep;
@@ -2998,8 +2998,8 @@ selfinsert(int f, int n, int k)
 		c = k & KCHAR;
 		if (dirsl < 63) { LINE *lp; dirsrch[dirsl++] = c; dirsrch[dirsl] = 0;
 			for (lp=lforw(curbp->b_linep); lp!=curbp->b_linep; lp=lforw(lp)) {
-				char fn[256]; int i, nn=llength(lp); if(nn<3) continue;
-				for(i=0;i<nn-2&&i<255;i++) fn[i]=lgetc(lp,i+2); fn[i]=0;
+				char fn[80]; int i, nn=llength(lp); if(nn<3) continue;
+				for(i=0;i<nn-2&&i<79;i++) fn[i]=lgetc(lp,i+2); fn[i]=0;
 				if(strcasestr(fn,dirsrch)){curwp->w_dotp=lp;curwp->w_doto=0;curwp->w_flag|=WFMOVE;break;}
 			}
 		}
@@ -3039,7 +3039,7 @@ newline(int f, int n, int k)
 {
 	register LINE	*lp;
 	register int	s;
-	if(dirmode){lp=curwp->w_dotp;char f_[256];int i_,n_=llength(lp);for(i_=0;i_<n_;i_++)f_[i_]=lgetc(lp,i_);f_[n_]=0;if(n_>1&&f_[0]=='>')filldir(f_+2);else{dirmode=0;readin(f_+2);}return TRUE;}
+	if(dirmode){lp=curwp->w_dotp;char f_[80];int i_,n_=llength(lp);for(i_=0;i_<n_;i_++)f_[i_]=lgetc(lp,i_);f_[n_]=0;if(n_>1&&f_[0]=='>')filldir(f_+2);else{dirmode=0;readin(f_+2);}return TRUE;}
 	if (n < 0)
 		return (FALSE);
 	while (n--) {
@@ -5486,7 +5486,7 @@ edinit(char * bname)
 
 static int
 undo(int f, int n, int k)
-{int c;if(!ut)return FALSE;c=uc[--ut&4095];ul=1;if(c>0){backchar(FALSE,1,KRANDOM);ldelete(1,FALSE);}else if(!c){backchar(FALSE,1,KRANDOM);ldelnewline();}else if(c>-256)linsert(1,-c);else lnewline();ul=0;lchange(WFHARD);return TRUE;}
+{int c;if(!ut)return FALSE;c=uc[--ut&2047];ul=1;if(c>0){backchar(FALSE,1,KRANDOM);ldelete(1,FALSE);}else if(!c){backchar(FALSE,1,KRANDOM);ldelnewline();}else if(c>-256)linsert(1,-c);else lnewline();ul=0;lchange(WFHARD);return TRUE;}
 static int
 jeffexit(int f, int n, int k)
 {
