@@ -705,9 +705,10 @@ loop:
 				while((ch=ttgetc())!=';') b=b*10+ch-'0';
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
 				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
-				if(b>=64&&b<128){int i;LINE*p=curwp->w_linep;
+				if(b>=64&&b<128){if(b&2){/* SGR btn 66/67 = horiz scroll; xterm/mintty only, macOS Terminal/iTerm2 don't send */
+				hoff=(b&1)?hoff+4:hoff>4?hoff-4:0;}else{int i;LINE*p=curwp->w_linep;
 				for(i=0;i<4;i++){LINE*ln=b&1?lforw(p):lback(p);if(ln!=curbp->b_linep)p=ln;}
-				curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
+				curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;}curwp->w_flag|=WFHARD;update();goto loop;}
 				x--; y--; row=y-curwp->w_toprow;
 				if(x>=ncol-2&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
 					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t++;
