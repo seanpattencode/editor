@@ -4682,9 +4682,8 @@ vtputc(int c)
 
 	vp = vscreen[vtrow];
 	if(vtcol<0){vtcol++;return;}
-	if (vtcol >= ncol)
-		vp->v_text[ncol-1] = '$';
-	else if (c == '\t') {
+	if (vtcol >= ncol) return;
+	if (c == '\t') {
 		do {
 			vtputc(' ');
 		} while (vtcol<ncol && (vtcol&0x07)!=0);
@@ -4705,8 +4704,7 @@ vteeol(void)
 		vp->v_text[vtcol++] = ' ';
 	if(vtrow==0){vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
 	else if(vtrow>=curwp->w_toprow&&vtrow<curwp->w_toprow+curwp->w_ntrows){
-		int thumb=vtrow>=sb_top&&vtrow<=sb_bot;
-		vp->v_text[ncol-2]=thumb?'|':' ';vp->v_text[ncol-1]=thumb?'|':' ';}
+		if(vtrow>=sb_top&&vtrow<=sb_bot){vp->v_text[ncol-2]='|';vp->v_text[ncol-1]='|';}}
 }
 
 static void
