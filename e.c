@@ -5235,44 +5235,24 @@ ffputline(char * buf, int nbuf)
 }
 
 static char	*ffline;
-static int	ffsize;
+static int	ffcap;
 
 static int
 ffgetline(char ** bufp, int * lenp)
 {
-	register int	c;
-	register int	i;
-	int		cap = ffsize;
+	int	c, i = 0;
 
-	if (cap == 0) { cap = NLINE; ffline = malloc(cap); }
-	i = 0;
+	if (!ffcap) { ffcap = NLINE; ffline = malloc(ffcap); }
 	for (;;) {
 		c = getc(ffp);
-		if (c == '\r') {
-			c = getc(ffp);
-			if (c != '\n') {
-				if (i >= cap-1) { cap *= 2; ffline = realloc(ffline, cap); }
-				ffline[i++] = '\r';
-			}
-		}
-		if (c==EOF || c=='\n')
-			break;
-		if (i >= cap-1) { cap *= 2; ffline = realloc(ffline, cap); }
+		if (c == '\r') { c = getc(ffp); if (c != '\n') { if (i>=ffcap-1) ffline = realloc(ffline, ffcap*=2); ffline[i++] = '\r'; } }
+		if (c==EOF || c=='\n') break;
+		if (i >= ffcap-1) ffline = realloc(ffline, ffcap*=2);
 		ffline[i++] = c;
 	}
-	ffsize = cap;
-	if (c == EOF) {
-		if (ferror(ffp) != FALSE) {
-			eprintf("File read error");
-			return (FIOERR);
-		}
-		if (i == 0)
-			return (FIOEOF);
-	}
-	ffline[i] = 0;
-	*bufp = ffline;
-	*lenp = i;
-	return (FIOSUC);
+	if (c==EOF) { if (ferror(ffp)) { eprintf("File read error"); return FIOERR; } if (!i) return FIOEOF; }
+	ffline[i] = 0; *bufp = ffline; *lenp = i;
+	return FIOSUC;
 }
 
 static int
