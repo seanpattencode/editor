@@ -304,7 +304,7 @@ static int	ffropen(char *);
 static int	ffwopen(char *);
 static int	ffclose(void);
 static int	ffputline(char *, int);
-static int	ffgetline(char *, int);
+static int	ffgetline(char **, int *);
 static int	fbackupfile(char *);
 static void	adjustcase(char *);
 static void	makename(char *, char *);
@@ -2670,9 +2670,9 @@ readin(char * fname)
 	register WINDOW	*wp;
 	register BUFFER	*bp;
 	register int	s;
-	register int	nbytes;
+	int		nbytes;
 	register int	nline;
-	char		line[NLINE];
+	char		*line;
 
 	bp = curbp;
 	if ((s=bclear(bp)) != TRUE)
@@ -2687,8 +2687,7 @@ readin(char * fname)
 		goto out;
 	}
 	nline = 0;
-	while ((s=ffgetline(line, NLINE)) == FIOSUC) {
-		nbytes = strlen(line);
+	while ((s=ffgetline(&line, &nbytes)) == FIOSUC) {
 		if ((lp1=lalloc(nbytes)) == NULL) {
 			s = FIOERR;
 			break;
@@ -5235,27 +5234,33 @@ ffputline(char * buf, int nbuf)
 	return (FIOSUC);
 }
 
+static char	*ffline;
+static int	ffsize;
+
 static int
-ffgetline(char * buf, int nbuf)
+ffgetline(char ** bufp, int * lenp)
 {
 	register int	c;
 	register int	i;
+	int		cap = ffsize;
 
+	if (cap == 0) { cap = NLINE; ffline = malloc(cap); }
 	i = 0;
 	for (;;) {
 		c = getc(ffp);
 		if (c == '\r') {
 			c = getc(ffp);
 			if (c != '\n') {
-				if (i < nbuf-1)
-					buf[i++] = '\r';
+				if (i >= cap-1) { cap *= 2; ffline = realloc(ffline, cap); }
+				ffline[i++] = '\r';
 			}
 		}
 		if (c==EOF || c=='\n')
 			break;
-		if (i < nbuf-1)
-			buf[i++] = c;
+		if (i >= cap-1) { cap *= 2; ffline = realloc(ffline, cap); }
+		ffline[i++] = c;
 	}
+	ffsize = cap;
 	if (c == EOF) {
 		if (ferror(ffp) != FALSE) {
 			eprintf("File read error");
@@ -5264,7 +5269,9 @@ ffgetline(char * buf, int nbuf)
 		if (i == 0)
 			return (FIOEOF);
 	}
-	buf[i] = 0;
+	ffline[i] = 0;
+	*bufp = ffline;
+	*lenp = i;
 	return (FIOSUC);
 }
 
