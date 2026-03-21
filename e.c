@@ -697,6 +697,7 @@ loop:
 	if (c == AGRAVE)
 		c = METACH;
 	if (c == ESC) {
+		{int n=0;ioctl(0,FIONREAD,&n);if(!n){quit(0,0,0);return 0;}}
 		c = ttgetc();
 		if (c == '[') {
 			c = ttgetc();
