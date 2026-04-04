@@ -247,6 +247,7 @@ extern	SYMBOL	*symbol[];
 extern	SYMBOL	*binding[];
 
 static void	ttflush(void);
+static void	eprintf(char*, ...);
 static void	ttputc(int);
 static void	asciiparm(int);
 static void	ttwindow(int, int);
@@ -718,15 +719,14 @@ loop:
 				if(b&32)goto loop;
 				if(y==0&&ch=='M'){if(x>=ncol-3)quit(0,0,0);else if(x>=ncol-8&&x<ncol-3){
 					char fn[NFILEN]="";FILE*fp;
-					ttclose();
+					eprintf("[Pick a file...]");update();ttflush();
 #ifdef __APPLE__
-					fp=popen("osascript -e 'POSIX path of (choose file)'","r");
+					fp=popen("osascript -e 'tell app \"SystemUIServer\" to activate' -e 'POSIX path of (choose file)' 2>/dev/null","r");
 #else
 					fp=popen("zenity --file-selection 2>/dev/null || kdialog --getopenfilename . 2>/dev/null","r");
 #endif
-					if(fp){if(fgets(fn,NFILEN,fp)){fn[strcspn(fn,"\n")]=0;}pclose(fp);}
-					ttopen();ttinit();sgarbf=TRUE;
-					if(fn[0])readin(fn);
+					if(fp){if(fgets(fn,NFILEN,fp))fn[strcspn(fn,"\n")]=0;pclose(fp);}
+					if(fn[0]){readin(fn);sgarbf=TRUE;}else eprintf("[Cancelled]");
 					}goto loop;}
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
