@@ -716,7 +716,18 @@ loop:
 					g=row*t/curwp->w_ntrows;for(p=lforw(curbp->b_linep);g>0&&p!=curbp->b_linep;g--)p=lforw(p);
 					curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
 				if(b&32)goto loop;
-				if(y==0&&x>=ncol-3&&ch=='M'){quit(0,0,0);goto loop;}
+				if(y==0&&ch=='M'){if(x>=ncol-3)quit(0,0,0);else if(x>=ncol-8&&x<ncol-3){
+					char fn[NFILEN]="";FILE*fp;
+					ttclose();
+#ifdef __APPLE__
+					fp=popen("osascript -e 'POSIX path of (choose file)'","r");
+#else
+					fp=popen("zenity --file-selection 2>/dev/null || kdialog --getopenfilename . 2>/dev/null","r");
+#endif
+					if(fp){if(fgets(fn,NFILEN,fp)){fn[strcspn(fn,"\n")]=0;}pclose(fp);}
+					ttopen();ttinit();sgarbf=TRUE;
+					if(fn[0])readin(fn);
+					}goto loop;}
 				if(row>=0 && row<curwp->w_ntrows) {
 					for(lp=curwp->w_linep;row>0&&lp!=curbp->b_linep;row--)lp=lforw(lp);
 					curwp->w_dotp=lp;{int i,cc;for(i=cc=0;i<llength(lp)&&cc<x;cc=lgetc(lp,i++)==9?(cc|7)+1:cc+1){}curwp->w_doto=i;}
@@ -4873,7 +4884,8 @@ vteeol(void)
 	vp = vscreen[vtrow];
 	while (vtcol < ncol)
 		vp->v_text[vtcol++] = ' ';
-	if(vtrow==0){vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
+	if(vtrow==0){const char*bt="+file";int bi;for(bi=0;bt[bi];bi++)vp->v_text[ncol-8+bi]=bt[bi];
+		vp->v_text[ncol-3]='[';vp->v_text[ncol-2]='X';vp->v_text[ncol-1]=']';}
 	else if(vtrow>=curwp->w_toprow&&vtrow<curwp->w_toprow+curwp->w_ntrows){
 		if(vtrow>=sb_top&&vtrow<=sb_bot){vp->v_text[ncol-2]='|';vp->v_text[ncol-1]='|';}}
 }
@@ -4955,6 +4967,7 @@ update(void)
 				vteeol();
 				hl_line(vscreen[i], ncol);
 				hl_sel(vscreen[i], lp, ncol, wp);
+				if(i==0){int bi;for(bi=0;bi<5;bi++)vscreen[0]->v_attr[ncol-8+bi]=HL_STR;}
 			} else if ((wp->w_flag&(WFEDIT|WFHARD)) != 0) {
 				hflag = TRUE;
 				while (i < wp->w_toprow+wp->w_ntrows) {
@@ -4969,7 +4982,8 @@ update(void)
 					}
 					vteeol();
 					hl_line(vscreen[i], ncol);
-					hl_sel(vscreen[i], clp, ncol, wp);}
+					hl_sel(vscreen[i], clp, ncol, wp);
+					if(i==0){int bi;for(bi=0;bi<5;bi++)vscreen[0]->v_attr[ncol-8+bi]=HL_STR;}}
 					++i;
 				}
 			}
