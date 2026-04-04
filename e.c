@@ -463,7 +463,7 @@ static void
 ttclose(void)
 {
 	write(1,"\033[?1002l\033[?1006l\033[2J\033[H",23); ttflush();
-	tcsetattr(1, TCSADRAIN, &oldtty);
+	tcflush(0, TCIFLUSH); tcsetattr(1, TCSADRAIN, &oldtty);
 }
 
 static void
