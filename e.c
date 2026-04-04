@@ -4646,6 +4646,7 @@ typedef	struct	{
 #define HL_CMT  3
 #define HL_NUM  4
 #define HL_PRE  5
+#define HL_SEL  6
 
 static const char *hl_colors[] = {
 	"\033[m",       /* HL_NORM */
@@ -4654,6 +4655,7 @@ static const char *hl_colors[] = {
 	"\033[36m",     /* HL_CMT cyan */
 	"\033[35m",     /* HL_NUM magenta */
 	"\033[31m",     /* HL_PRE red/preprocessor */
+	"\033[7m",      /* HL_SEL reverse video */
 };
 
 static const char *c_kw[] = {
@@ -4671,6 +4673,60 @@ static int is_ckw(const char *s, int len) {
 		if ((int)strlen(*k) == len && !memcmp(s, *k, (size_t)len))
 			return 1;
 	return 0;
+}
+
+static int
+off2col(LINE *lp, int off)
+{
+	int c = 0, k;
+	for (k = 0; k < off && k < llength(lp); k++) {
+		if (lgetc(lp,k)=='\t') c|=7;
+		c++;
+	}
+	return c - hoff;
+}
+
+static void
+hl_sel(VIDEO *vp, LINE *lp, int cols, WINDOW *wp)
+{
+	LINE *mp, *dp, *s1, *s2, *p;
+	int mo, doto, o1, o2, df, c1, c2, ci, in;
+	mp = wp->w_markp; dp = wp->w_dotp;
+	mo = wp->w_marko; doto = wp->w_doto;
+	if (!mp) return;
+	if (dp == mp) {
+		if (doto == mo) return;
+		s1 = s2 = dp;
+		o1 = doto < mo ? doto : mo;
+		o2 = doto < mo ? mo : doto;
+	} else {
+		df = 0;
+		for (p = lforw(dp); p != wp->w_bufp->b_linep; p = lforw(p))
+			if (p == mp) { df = 1; break; }
+		if (df) { s1 = dp; o1 = doto; s2 = mp; o2 = mo; }
+		else    { s1 = mp; o1 = mo; s2 = dp; o2 = doto; }
+	}
+	if (lp == s1 && lp == s2) {
+		c1 = off2col(lp, o1); c2 = off2col(lp, o2);
+		for (ci = c1 < 0 ? 0 : c1; ci < c2 && ci < cols; ci++)
+			vp->v_attr[ci] = HL_SEL;
+		return;
+	}
+	/* check if lp is in [s1..s2] */
+	in = 0;
+	if (lp == s1 || lp == s2) in = 1;
+	else { for (p = lforw(s1); p != wp->w_bufp->b_linep && p != s2; p = lforw(p))
+		if (p == lp) { in = 1; break; } }
+	if (!in) return;
+	if (lp == s1) {
+		c1 = off2col(lp, o1);
+		for (ci = c1 < 0 ? 0 : c1; ci < cols; ci++) vp->v_attr[ci] = HL_SEL;
+	} else if (lp == s2) {
+		c2 = off2col(lp, o2);
+		for (ci = 0; ci < c2 && ci < cols; ci++) vp->v_attr[ci] = HL_SEL;
+	} else {
+		for (ci = 0; ci < cols; ci++) vp->v_attr[ci] = HL_SEL;
+	}
 }
 
 static void
@@ -4847,6 +4903,8 @@ update(void)
 	}
 	curmsgf = newmsgf;
 	hflag = FALSE;
+	if (curwp->w_markp && (curwp->w_flag & WFMOVE))
+		curwp->w_flag |= WFHARD;
 	{int t=0,a=0,h;LINE*p;for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){if(p==curwp->w_linep)a=t;t++;}
 	h=curwp->w_ntrows;if(t<h)t=h;sb_top=curwp->w_toprow+a*h/t;sb_bot=sb_top+h/6;if(sb_bot<sb_top+4)sb_bot=sb_top+4;if(sb_bot>sb_top+h-1)sb_bot=sb_top+h-1;}
 	{int _i=0,_c=0,_oh=hoff;while(_i<curwp->w_doto){if(lgetc(curwp->w_dotp,_i)=='\t')_c|=7;_i++;_c++;}hoff=_c>ncol-4?_c-ncol+8:0;if(hoff!=_oh)curwp->w_flag|=WFHARD;}
@@ -4896,12 +4954,14 @@ update(void)
 					vtputc(lgetc(lp, j));
 				vteeol();
 				hl_line(vscreen[i], ncol);
+				hl_sel(vscreen[i], lp, ncol, wp);
 			} else if ((wp->w_flag&(WFEDIT|WFHARD)) != 0) {
 				hflag = TRUE;
 				while (i < wp->w_toprow+wp->w_ntrows) {
 					vscreen[i]->v_color = CTEXT;
 					vscreen[i]->v_flag |= (VFCHG|VFHBAD);
 					vtmove(i, -hoff);
+					{LINE *clp = lp;
 					if (lp != wp->w_bufp->b_linep) {
 						for (j=0; j<llength(lp); ++j)
 							vtputc(lgetc(lp, j));
@@ -4909,6 +4969,7 @@ update(void)
 					}
 					vteeol();
 					hl_line(vscreen[i], ncol);
+					hl_sel(vscreen[i], clp, ncol, wp);}
 					++i;
 				}
 			}
@@ -5040,7 +5101,7 @@ uline(int row, VIDEO * vvp, VIDEO * pvp)
 		for (col = 0; col < ncol; col++) {
 			if (vvp->v_attr[col] != ca) {
 				ca = vvp->v_attr[col];
-				if (ca >= 0 && ca <= HL_PRE) {
+				if (ca >= 0 && ca <= HL_SEL) {
 					const char *s = hl_colors[ca];
 					while (*s) ttputc(*s++);
 				}
