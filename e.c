@@ -69,6 +69,7 @@ static char dirsrch[64];
 static int dirsl;
 static int sb_top, sb_bot;
 static int uc[2048],ut,ul,hoff;
+static char *box_msg;
 
 #define	CVMVAS	1
 
@@ -5596,9 +5597,11 @@ main(int argc, char * * argv)
 	char		bname[NBUFN];
 
 	strcpy(bname, "main");
+	if (argc >= 3 && !strcmp(argv[1], "--box")) { box_msg = argv[2]; argv += 2; argc -= 2; }
 	if (argc > 1)
 		makename(bname, argv[1]);
 	vtinit();
+	if (box_msg && ncol > 70) ncol = 70;
 	signal(SIGWINCH, sigwinch);
 	edinit(bname);
 	keymapinit();
@@ -5607,6 +5610,24 @@ main(int argc, char * * argv)
 loop:
 	if(resized){resized=0;refresh(0,0,0);}
 	update();
+	if (box_msg) {
+		int sr=ttrow, sc=ttcol, i, ml=(int)strlen(box_msg), cc;
+		#define BX(b) (ttputc(0xE2),ttputc(0x94),ttputc(b))
+		if (ml > ncol-6) ml = ncol-6;
+		ttcolor(CMODE); ttmove(0,0); cc=0;
+		BX(0x8C); cc++; BX(0x80); cc++; ttputc(' '); cc++;
+		for (i=0; i<ml; i++) { ttputc((unsigned char)box_msg[i]); cc++; }
+		ttputc(' '); cc++;
+		while (cc<ncol-1) { BX(0x80); cc++; }
+		BX(0x90); ttcol=ncol;
+		ttcolor(CTEXT);
+		for (i=1; i<nrow-2; i++) {
+			ttmove(i,0); ttputc('|'); ttcol=1;
+			ttmove(i,ncol-1); ttputc('|'); ttcol=ncol;
+		}
+		#undef BX
+		ttmove(sr,sc); ttflush();
+	}
 	c = getkey();
 	if (epresf != FALSE) {
 		eerase();
@@ -5686,8 +5707,8 @@ edinit(char * bname)
 	wp->w_doto  = 0;
 	wp->w_markp = NULL;
 	wp->w_marko = 0;
-	wp->w_toprow = 0;
-	wp->w_ntrows = nrow-2;
+	wp->w_toprow = box_msg ? 1 : 0;
+	wp->w_ntrows = box_msg ? nrow-3 : nrow-2;
 	wp->w_force = 0;
 	wp->w_flag  = WFMODE|WFHARD;
 }
@@ -5706,6 +5727,7 @@ jeffexit(int f, int n, int k)
 static int
 quit(int f, int n, int k)
 {
+	if (box_msg && (curbp->b_flag & BFCHG) && filesave(0,0,0) != TRUE) return FALSE;
 	vttidy();
 	exit(GOOD);
 }
