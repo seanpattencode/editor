@@ -64,7 +64,8 @@ exit 0
 #include	<sys/wait.h>
 #include	<sys/inotify.h>
 #include	<sys/select.h>
-static int dirmode;
+static int dirmode,pmode;
+static unsigned char rbuf[4096];static int rh,rt;
 static char dirsrch[64];
 static int dirsl;
 static int sb_top, sb_bot;
@@ -460,13 +461,13 @@ ttopen(void)
 	if (ncol > NCOL)
 		ncol = NCOL;
 
-	write(1, "\033[?1006h\033[?1002h", 16);
+	write(1, "\033[?1006h\033[?1002h\033[?2004h", 24);
 }
 
 static void
 ttclose(void)
 {
-	write(1,"\033[?1002l\033[?1006l\033[2J\033[H",23); ttflush();
+	write(1,"\033[?1002l\033[?1006l\033[?2004l\033[2J\033[H",31); ttflush();
 	tcflush(0, TCIFLUSH); tcsetattr(1, TCSADRAIN, &oldtty);
 }
 
@@ -497,7 +498,7 @@ static void fwatch(const char*f){char d[NFILEN];const char*s=strrchr(f,'/');
 static int
 ttgetc(void)
 {
-	char buf[1];
+	if(rh<rt)return rbuf[rh++];
 	for(;;){fd_set r;FD_ZERO(&r);FD_SET(0,&r);int mx=0;
 	    if(ifd>=0){FD_SET(ifd,&r);mx=ifd;}
 	    if(select(mx+1,&r,0,0,0)<0)continue;
@@ -511,7 +512,7 @@ ttgetc(void)
 	            for(lp=lforw(curbp->b_linep);ln>0&&lp!=curbp->b_linep;ln--)lp=lforw(lp);
 	            curwp->w_dotp=lp;curwp->w_doto=off<llength(lp)?off:llength(lp);
 	            curwp->w_flag|=WFHARD;update();ttflush();}}
-	    if(FD_ISSET(0,&r)&&read(0,buf,1)==1)return buf[0]&0xFF;}
+	    if(FD_ISSET(0,&r)){int n=read(0,rbuf,sizeof rbuf);if(n>0){rh=1;rt=n;return rbuf[0];}}}
 }
 
 #define	BEL	0x07
@@ -718,7 +719,8 @@ loop:
 	if (c == AGRAVE)
 		c = METACH;
 	if (c == ESC) {
-		{int n=0;ioctl(0,FIONREAD,&n);if(!n){quit(0,0,0);return 0;}}
+		{fd_set r;FD_ZERO(&r);FD_SET(0,&r);struct timeval t={0,50000};
+		 if(rh>=rt&&!select(1,&r,0,0,&t)){quit(0,0,0);return 0;}}
 		c = ttgetc();
 		if (c == '[') {
 			c = ttgetc();
@@ -779,6 +781,7 @@ loop:
 						return (c);
 					goto loop;
 				}
+				if (c=='~' && (n==200||n==201)) {pmode=(n==200); if(!pmode){update();ttflush();} goto loop;}
 			}
 			goto loop;
 		}
@@ -1217,9 +1220,7 @@ lalloc(int used)
 	register LINE	*lp;
 	register int	size;
 
-	size = (used+NBLOCK-1) & ~(NBLOCK-1);
-	if (size == 0)
-		size = NBLOCK;
+	size = used<NBLOCK ? NBLOCK : used*2;
 	if ((lp=(LINE *)malloc(sizeof(LINE)+size)) == NULL) {
 		eprintf("Cannot allocate %d bytes", size);
 		return (NULL);
@@ -5610,7 +5611,7 @@ main(int argc, char * * argv)
 	lastflag = 0;
 loop:
 	if(resized){resized=0;refresh(0,0,0);}
-	update();
+	{int nb=0;if(rh>=rt)ioctl(0,FIONREAD,&nb);if(rh>=rt&&!nb&&!pmode){update();
 	if (box_msg) {
 		int sr=ttrow, sc=ttcol, i, ml=(int)strlen(box_msg), cc=0;
 		#define BX ttputc(0xE2),ttputc(0x94),ttputc(0x80)
@@ -5626,6 +5627,7 @@ loop:
 		ttcol=ncol; ttcolor(CTEXT);
 		ttmove(sr,sc); ttflush();
 	}
+	}}
 	c = getkey();
 	if (epresf != FALSE) {
 		eerase();
