@@ -5194,6 +5194,7 @@ modeline(WINDOW * wp)
 	register int	n;
 	register BUFFER	*bp;
 
+	if (box_msg) return;
 	n = wp->w_toprow+wp->w_ntrows;
 	vscreen[n]->v_color = CMODE;
 	vscreen[n]->v_flag |= (VFCHG|VFHBAD);
@@ -5611,21 +5612,18 @@ loop:
 	if(resized){resized=0;refresh(0,0,0);}
 	update();
 	if (box_msg) {
-		int sr=ttrow, sc=ttcol, i, ml=(int)strlen(box_msg), cc;
-		#define BX(b) (ttputc(0xE2),ttputc(0x94),ttputc(b))
-		if (ml > ncol-6) ml = ncol-6;
-		ttcolor(CMODE); ttmove(0,0); cc=0;
-		BX(0x8C); cc++; BX(0x80); cc++; ttputc(' '); cc++;
+		int sr=ttrow, sc=ttcol, i, ml=(int)strlen(box_msg), cc=0;
+		#define BX ttputc(0xE2),ttputc(0x94),ttputc(0x80)
+		if (ml > ncol-4) ml = ncol-4;
+		ttcolor(CMODE); ttmove(0,0);
+		BX; cc++; ttputc(' '); cc++;
 		for (i=0; i<ml; i++) { ttputc((unsigned char)box_msg[i]); cc++; }
 		ttputc(' '); cc++;
-		while (cc<ncol-1) { BX(0x80); cc++; }
-		BX(0x90); ttcol=ncol;
-		ttcolor(CTEXT);
-		for (i=1; i<nrow-2; i++) {
-			ttmove(i,0); ttputc('|'); ttcol=1;
-			ttmove(i,ncol-1); ttputc('|'); ttcol=ncol;
-		}
+		while (cc<ncol) { BX; cc++; }
+		ttmove(nrow-2,0);
+		for (cc=0; cc<ncol; cc++) BX;
 		#undef BX
+		ttcol=ncol; ttcolor(CTEXT);
 		ttmove(sr,sc); ttflush();
 	}
 	c = getkey();
