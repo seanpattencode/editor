@@ -190,6 +190,7 @@ typedef	struct	WINDOW {
 	char	w_ntrows;
 	char	w_force;
 	char	w_flag;
+	int	w_skip;	/* wrap rows skipped from top of w_linep (for visual-row scrolling) */
 }	WINDOW;
 
 #define	WFFORCE	0x01
@@ -289,6 +290,7 @@ static void	modeline(WINDOW *);
 static void	vtmove(int, int);
 static void	vtputc(int);
 static void	vteeol(void);
+static int	wrap_rows(LINE *);
 static int	eread(char *, char *, int, int, va_list);
 static void	eformat(char *, va_list);
 static void	eputi(int, int);
@@ -729,14 +731,16 @@ loop:
 				while((ch=ttgetc())!=';') x=x*10+ch-'0';
 				while((ch=ttgetc())!='M'&&ch!='m') y=y*10+ch-'0';
 				if(b>=64&&b<128){if(b&2){/* SGR btn 66/67 = horiz scroll; xterm/mintty only, macOS Terminal/iTerm2 don't send */
-				hoff=(b&1)?hoff+4:hoff>4?hoff-4:0;}else{int i;LINE*p=curwp->w_linep;
-				for(i=0;i<4;i++){LINE*ln=b&1?lforw(p):lback(p);if(ln!=curbp->b_linep)p=ln;}
-				curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;}curwp->w_flag|=WFHARD;update();goto loop;}
+				hoff=(b&1)?hoff+4:hoff>4?hoff-4:0;}else{int i;LINE*p=curwp->w_linep;int sk=curwp->w_skip;
+				for(i=0;i<3;i++){if(b&1){int wr=wrap_rows(p); if(sk<wr-1)sk++; else{LINE*ln=lforw(p);if(ln!=curbp->b_linep){p=ln;sk=0;}}}
+				else{if(sk>0)sk--; else{LINE*ln=lback(p);if(ln!=curbp->b_linep){p=ln;sk=wrap_rows(p)-1;}}}}
+				curwp->w_linep=p;curwp->w_skip=sk;}curwp->w_flag|=WFHARD;update();goto loop;}
 				x--; y--; row=y-curwp->w_toprow;
-				if(x>=ncol-2&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0,g;LINE*p;
-					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t++;
-					g=row*t/curwp->w_ntrows;for(p=lforw(curbp->b_linep);g>0&&p!=curbp->b_linep;g--)p=lforw(p);
-					curwp->w_linep=curwp->w_dotp=p;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
+				if(x>=ncol-2&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0;LINE*p;
+					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t+=wrap_rows(p);
+					int g=row*t/curwp->w_ntrows,seen=0;LINE*tl=lforw(curbp->b_linep);int tsk=0;
+					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p)){int wr=wrap_rows(p);if(seen+wr>g){tl=p;tsk=g-seen;break;}seen+=wr;}
+					curwp->w_linep=curwp->w_dotp=tl;curwp->w_skip=tsk;curwp->w_doto=0;curwp->w_flag|=WFHARD;update();goto loop;}
 				if(b&32)goto loop;
 				if(y==0&&ch=='M'){if(x>=ncol-3)quit(0,0,0);else if(x>=ncol-8&&x<ncol-3){
 					char fn[NFILEN]="";FILE*fp;
@@ -4924,13 +4928,22 @@ static int wrap_rows(LINE *lp) {
 	return rows;
 }
 
-static int wrap_render(LINE *lp, int row, int max_row, WINDOW *wp) {
-	int j, c, col = 0;
+static int wrap_render(LINE *lp, int row, int max_row, WINDOW *wp, int skip) {
+	int j = 0, c, col = 0;
 	if (row >= max_row) return row;
+	if (skip > 0) { int vr = 0;
+		for (; j < llength(lp); j++) {
+			c = lgetc(lp, j);
+			int w = c=='\t' ? (8-(col&7)) : ISCTRL(c) ? 2 : 1;
+			if (col+w>ncol-2 && col>0) { vr++; col = 0; if (vr == skip) break; }
+			col += w;
+		}
+		col = 0;
+	}
 	vscreen[row]->v_color = CTEXT;
 	vscreen[row]->v_flag |= (VFCHG|VFHBAD);
 	vtmove(row, 0);
-	for (j = 0; j < llength(lp); j++) {
+	for (; j < llength(lp); j++) {
 		c = lgetc(lp, j);
 		int w = c=='\t' ? (8-(col&7)) : ISCTRL(c) ? 2 : 1;
 		if (col+w>ncol-2 && col>0) {
@@ -5013,15 +5026,18 @@ update(void)
 				lp = lback(lp);
 			}
 			wp->w_linep = lp;
+			wp->w_skip = 0;
 			wp->w_flag |= WFHARD;
 		out:
 			lp = wp->w_linep;
 			i  = wp->w_toprow;
 			if ((wp->w_flag&(WFEDIT|WFHARD)) != 0) {
 				hflag = TRUE;
+				int skip = wp->w_skip;
 				while (i < wp->w_toprow+wp->w_ntrows) {
 					if (lp != wp->w_bufp->b_linep) {
-						i = wrap_render(lp, i, wp->w_toprow+wp->w_ntrows, wp);
+						i = wrap_render(lp, i, wp->w_toprow+wp->w_ntrows, wp, skip);
+						skip = 0;
 						lp = lforw(lp);
 					} else {
 						vscreen[i]->v_color = CTEXT;
@@ -5042,7 +5058,7 @@ update(void)
 		wp = wp->w_wndp;
 	}
 	lp = curwp->w_linep;
-	currow = curwp->w_toprow;
+	currow = curwp->w_toprow - curwp->w_skip;
 	while (lp != curwp->w_dotp) {
 		currow += wrap_rows(lp);
 		lp = lforw(lp);
