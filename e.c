@@ -5635,9 +5635,11 @@ main(int argc, char * * argv)
 	register int	n;
 	register int	mflag;
 	char		bname[NBUFN];
+	int		tail_flag = 0;
 
 	strcpy(bname, "main");
 	if (argc >= 3 && !strcmp(argv[1], "--box")) { box_msg = argv[2]; argv += 2; argc -= 2; }
+	if (argc >= 2 && !strcmp(argv[1], "--tail")) { tail_flag = 1; argv++; argc--; }
 	if (argc > 1)
 		makename(bname, argv[1]);
 	vtinit();
@@ -5647,6 +5649,8 @@ main(int argc, char * * argv)
 	keymapinit();
 	if (box_msg) { if (binding[KCTRL|'@']) binding[KCTRL|'@']->s_nkey--; if (binding[KCTRL|'M']) binding[KCTRL|'M']->s_nkey--; binding[KCTRL|'@'] = binding[KCTRL|'M'] = binding[KCTRL|'D']; if (binding[KCTRL|'D']) binding[KCTRL|'D']->s_nkey += 2; }
 	if (argc > 1) { update(); readin(argv[1]); } else filldir(".");
+	if (tail_flag) { LINE*lp; for(lp=lforw(curbp->b_linep);lforw(lp)!=curbp->b_linep;lp=lforw(lp));
+	    curwp->w_dotp=lp; curwp->w_doto=llength(lp); curwp->w_flag|=WFHARD; }
 	lastflag = 0;
 loop:
 	if(resized){resized=0;refresh(0,0,0);}
