@@ -738,7 +738,7 @@ loop:
 				hoff=(b&1)?hoff+4:hoff>4?hoff-4:0;}else{int i;LINE*p=curwp->w_linep;int sk=curwp->w_skip;
 				for(i=0;i<3;i++){if(b&1){int wr=wrap_rows(p); if(sk<wr-1)sk++; else{LINE*ln=lforw(p);if(ln!=curbp->b_linep){p=ln;sk=0;}}}
 				else{if(sk>0)sk--; else{LINE*ln=lback(p);if(ln!=curbp->b_linep){p=ln;sk=wrap_rows(p)-1;}}}}
-				curwp->w_linep=p;curwp->w_skip=sk;}curwp->w_flag|=WFHARD;update();goto loop;}
+				curwp->w_linep=p;curwp->w_skip=sk;curwp->w_dotp=p;curwp->w_doto=0;}curwp->w_flag|=WFHARD;update();goto loop;}
 				x--; y--; row=y-curwp->w_toprow;
 				if(!nosb&&x>=ncol-2&&y>0&&row>=0&&row<curwp->w_ntrows){int t=0;LINE*p;
 					for(p=lforw(curbp->b_linep);p!=curbp->b_linep;p=lforw(p))t+=wrap_rows(p);
